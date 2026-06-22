@@ -1,0 +1,920 @@
+# Consumer-required OpenAPI 3.1 — Discover Pod ↔ mt-landvault-api (areal query model)
+#
+# Authoring note (per ADR-0057): this is the CONSUMER-REQUIRED contract — what the
+# Discover Pod needs from mt-landvault-api — not a mirror of whatever the provider
+# happens to return. It is the executable projection of the normative SPEC.md
+# (landvault-shell/docs/data-layer-maps/SPEC.md, v0.2.0-draft.2). Where SPEC and the
+# live client (arealApi.ts) or dummy-server fixtures diverge, SPEC governs the
+# contract and the divergence is recorded in coverage-matrix.md.
+#
+# REQ tagging convention (per CCT-2026-0002, Option A):
+#   x-req           — the SPEC.md REQ-* tag this element realises
+#   x-spec-section  — the SPEC.md section number ("§3.2" etc.) the element derives from
+# Every operation AND every named schema component carries both. Drift between SPEC
+# and this document is surfaced by REQ-tag mismatch at the coverage-matrix gate.
+#
+# Section references point back to SPEC.md rather than restating its prose. Schema
+# field names/types/required ARE defined here — the document is the executable
+# contract (issue note interpretation, SHELL-2026-0698).
+
+openapi: 3.1.0
+
+info:
+  title: Discover Pod — Areal Query API (consumer-required contract)
+  version: 0.2.0
+  description: >
+    Consumer-required contract for the county-level data-layer (areal) map.
+    Derived from the normative SPEC.md §3 (data model + endpoints) and §4
+    (empty/suppressed/error states). The query model (SPEC §3.0) joins region
+    geometry (PMTiles) to per-region analyte values (JSON) in the browser by
+    regionId. Geometry tiles never reload; switching analyte/year/scale/source
+    re-fetches a small JSON payload and recolours.
+  x-normative-source: landvault-shell/docs/data-layer-maps/SPEC.md
+  x-spec-version: 0.2.0-draft.2
+  x-governing-adrs: [ADR-0056, ADR-0057, ADR-0060, ADR-0062]
+
+servers:
+  - url: /api/landvault
+    description: >
+      Shell proxy prefix (SPEC §3.0). The dummy server (SHELL-2026-0658) serves the
+      same paths under VITE_AREAL_DUMMY_URL; only that var changes when the real
+      backend ships.
+
+tags:
+  - name: areal
+    description: County-level areal query endpoints (SPEC §3.0).
+
+paths:
+  /areal:
+    get:
+      operationId: getArealCatalogue
+      summary: Dataset catalogue — analytes, years, crops, regions, suppression thresholds
+      description: >
+        Published once at startup; drives every control. The frontend invents no
+        option — everything comes from here (SPEC §3.1).
+      tags: [areal]
+      x-req: REQ-META
+      x-spec-section: "§3.1"
+      responses:
+        '200':
+          description: Catalogue envelope (SPEC §3.0 envelope + §3.1 data).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CatalogueEnvelope'
+
+  /areal/regions:
+    get:
+      operationId: getArealRegions
+      summary: Region (county) geometry as PMTiles
+      description: >
+        County polygons, geometry only, served as vector PMTiles (SPEC §3.0).
+        Supports HTTP range requests. Features carry { regionId, name, state } and
+        no measurement values. This is a binary tile endpoint, not JSON — no
+        envelope. GAP-1 (SPEC §9) is resolved: the framework renders county polygons.
+      tags: [areal]
+      x-req: REQ-META
+      x-spec-section: "§3.0"
+      parameters:
+        - name: Range
+          in: header
+          required: false
+          description: HTTP byte-range request for partial PMTiles fetch (SPEC §3.0).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Full PMTiles archive.
+          content:
+            application/x-protobuf:
+              schema:
+                type: string
+                format: binary
+        '206':
+          description: Partial content for a byte range.
+          content:
+            application/x-protobuf:
+              schema:
+                type: string
+                format: binary
+
+  /areal/analytes/{analyteId}:
+    get:
+      operationId: getArealAnalyte
+      summary: Per-region analyte values for one analyte
+      description: >
+        One county aggregate record per region for the given analyte, resolved by
+        the source parameter (SPEC §3.2 measured, §3.3 predicted, §3.8 both). Absent
+        record ⇒ no data for that county (SPEC §4 "No data").
+      tags: [areal]
+      x-req: REQ-AGG
+      x-spec-section: "§3.2 / §3.3 / §3.8"
+      parameters:
+        - name: analyteId
+          in: path
+          required: true
+          description: Stable analyte key from the catalogue (SPEC §3.1 analytes[].id).
+          schema:
+            type: string
+        - name: source
+          in: query
+          required: false
+          description: >
+            Selects the data source (SPEC §3.8). measured = real-sample-derived,
+            sparse, suppressible; predicted = model-generated, covers most counties,
+            not suppressible; both = backend resolves per county (measured if ≥ M
+            fields, else predicted) and stamps resolvedSource on each record.
+          schema:
+            $ref: '#/components/schemas/SourceParam'
+        - name: year
+          in: query
+          required: false
+          description: Selectable year from the catalogue, or "all" (SPEC §3.1 years).
+          schema:
+            type: string
+        - name: scale
+          in: query
+          required: false
+          description: absolute | benchmark (SPEC §3.2/§3.6; benchmark drives benchmarkApplied).
+          schema:
+            type: string
+            enum: [absolute, benchmark]
+        - name: crop
+          in: query
+          required: false
+          description: >
+            Benchmark crop id (SPEC §3.1 crops, §5.4 REQ-BM-2). Region is derived
+            from the county, not chosen. Pre-authorized connection-layer parameter
+            (arealApi.ts, coordinator 2026-06-18).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Analyte-values envelope; data is an array of region records.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyteEnvelope'
+        '404':
+          description: Unknown analyteId (provider-observed; SPEC §4 treats absent data as no-data, not 404).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /areal/suitability:
+    post:
+      operationId: postArealSuitability
+      summary: Suitability scoring — how well each county matches criteria
+      description: >
+        Evaluates user-defined criteria (agronomic conditions) against each county's
+        fields for measured and/or predicted data and returns per-county match
+        counts + composite score (SPEC §3.4, REQ-RULE-RESULT). Both sources are
+        evaluated independently (SPEC §3.4, REQ-RULE-3 / REQ-PRED-5). All scoring is
+        server-side (INV-4 — the frontend computes no statistic).
+      tags: [areal]
+      x-req: REQ-RULE-RESULT
+      x-spec-section: "§3.4"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuitabilityRequest'
+      responses:
+        '200':
+          description: Suitability envelope (SPEC §3.4 response).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuitabilityEnvelope'
+        '400':
+          description: Malformed body (e.g. criteria not an array). Provider-observed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /areal/histograms/{analyteId}:
+    get:
+      operationId: getArealHistogram
+      summary: Fixed per-analyte histogram bins and all-region counts
+      description: >
+        Stable per-analyte bins (SPEC §3.7, decision E1 §7). Bins are stable across
+        year/source/viewport so the colour ramp and histogram share one ruler. The
+        frontend reuses bins[].from/to to tally the viewport subset client-side
+        (FrontendTallyAdapter) — leaking nothing.
+      tags: [areal]
+      x-req: REQ-HIST
+      x-spec-section: "§3.7"
+      parameters:
+        - name: analyteId
+          in: path
+          required: true
+          description: Stable analyte key (SPEC §3.1 analytes[].id).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Histogram envelope (SPEC §3.7 data).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HistogramEnvelope'
+        '404':
+          description: Unknown analyteId (provider-observed).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+
+    # -----------------------------------------------------------------------
+    # Envelope (SPEC §3.0) — every JSON response shares this wrapper
+    # -----------------------------------------------------------------------
+    Envelope:
+      type: object
+      description: >
+        Standard contract envelope (SPEC §3.0). query echoes the resolved request
+        parameters so they are never repeated per record. NFR-VER-1: payloads carry
+        a version marker and the frontend tolerates unknown additive fields.
+      x-req: REQ-META
+      x-spec-section: "§3.0"
+      required: [contractVersion, generatedAt, data]
+      properties:
+        contractVersion:
+          type: string
+          description: Contract version marker (NFR-VER-1).
+        generatedAt:
+          type: string
+          format: date-time
+        query:
+          type: object
+          description: Echo of the resolved request parameters (SPEC §3.0).
+          additionalProperties: true
+        data:
+          description: Endpoint-specific payload (SPEC §3.1–§3.9).
+
+    SourceParam:
+      type: string
+      description: Data source selector (SPEC §3.8).
+      x-req: REQ-PRED
+      x-spec-section: "§3.8"
+      enum: [measured, predicted, both]
+      default: measured
+
+    # -----------------------------------------------------------------------
+    # §3.1 Dataset catalogue — REQ-META
+    # -----------------------------------------------------------------------
+    CatalogueEnvelope:
+      description: Envelope whose data is the dataset catalogue (SPEC §3.1).
+      x-req: REQ-META
+      x-spec-section: "§3.1"
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/CatalogueData'
+
+    CatalogueData:
+      type: object
+      description: Dataset catalogue payload (SPEC §3.1).
+      x-req: REQ-META
+      x-spec-section: "§3.1"
+      required: [analytes, years, crops, thresholds]
+      properties:
+        analytes:
+          type: array
+          items:
+            $ref: '#/components/schemas/AnalyteCatalogueEntry'
+        years:
+          type: array
+          description: Selectable years; "all" is a valid selection (SPEC §3.1).
+          items:
+            type: integer
+        crops:
+          type: array
+          description: Benchmark crop dropdown; MUST include the "general" default (SPEC §3.1).
+          items:
+            $ref: '#/components/schemas/Crop'
+        regions:
+          type: array
+          description: >
+            County list; geometry comes from GET /areal/regions (SPEC §3.1). Listed
+            in SPEC §3.1 catalogue fields. NOTE: arealApi.ts ArealCatalogueData omits
+            this field (client gap — SPEC governs). See coverage-matrix.md.
+          items:
+            $ref: '#/components/schemas/RegionRef'
+        thresholds:
+          $ref: '#/components/schemas/SuppressionThresholds'
+
+    AnalyteCatalogueEntry:
+      type: object
+      description: One analyte entry (SPEC §3.1). Drives every UI control.
+      x-req: REQ-META
+      x-spec-section: "§3.1"
+      required: [id, label, unit, category, benchmarkScalable, filterSteps, valueRange]
+      properties:
+        id:
+          type: string
+          description: Stable key (SPEC §3.1).
+        label:
+          type: string
+          description: Display name (SPEC §3.1).
+        unit:
+          type: string
+          description: May be empty (SPEC §3.1).
+        category:
+          type: string
+          description: Drives benchmark-scalability (SPEC §3.1, §7-D).
+          enum: [chemistry, microbe, shi]
+        benchmarkScalable:
+          type: boolean
+          description: true ⇒ scale toggle enabled (SPEC §3.1, §5.2 REQ-CTRL-2).
+        filterSteps:
+          type: array
+          description: >
+            The only threshold values a user may pick when building criteria —
+            discrete by design (SPEC §3.1, §5.5 REQ-RULE-2; prevents reverse-
+            engineering hidden field values).
+          items:
+            type: number
+        filterStepsUnit:
+          type: string
+          description: Optional unit for filterSteps, e.g. "% of benchmark" (SPEC §3.1).
+        valueRange:
+          $ref: '#/components/schemas/ValueRange'
+
+    ValueRange:
+      type: array
+      description: >
+        Stable per-analyte [min, max] (× scale) (SPEC §3.1, decision E1 §7). The
+        frontend uses this to set the colour ramp domain; it MUST NOT compute its own
+        range (INV-4).
+      x-req: REQ-META
+      x-spec-section: "§3.1"
+      minItems: 2
+      maxItems: 2
+      prefixItems:
+        - type: number
+        - type: number
+      items:
+        type: number
+
+    Crop:
+      type: object
+      description: Benchmark crop entry (SPEC §3.1).
+      x-req: REQ-META
+      x-spec-section: "§3.1"
+      required: [id, label]
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+
+    RegionRef:
+      type: object
+      description: County reference in the catalogue (SPEC §3.1 regions).
+      x-req: REQ-META
+      x-spec-section: "§3.1"
+      required: [regionId, name]
+      properties:
+        regionId:
+          type: string
+          description: 5-digit FIPS (US) or equivalent stable id (Canada) (SPEC §3.0).
+        name:
+          type: string
+
+    SuppressionThresholds:
+      type: object
+      description: >
+        Suppression minima, per-analyte (SPEC §3.1, INV-6, §7-I). Backend variables —
+        never hard-coded on the frontend. M = min fields = binding privacy threshold.
+      x-req: REQ-META
+      x-spec-section: "§3.1"
+      required: [K, M, Kprime]
+      properties:
+        K:
+          type: integer
+          description: Min samples (SPEC §3.1).
+        M:
+          type: integer
+          description: Min fields — binding privacy threshold (SPEC §3.1, §7-I).
+        Kprime:
+          type: integer
+          description: Min nonzero rule-matches (SPEC §3.1, K′).
+
+    # -----------------------------------------------------------------------
+    # §3.2 / §3.3 / §3.8 Analyte values — REQ-AGG / REQ-PRED
+    # -----------------------------------------------------------------------
+    AnalyteEnvelope:
+      description: Envelope whose data is an array of per-region analyte records.
+      x-req: REQ-AGG
+      x-spec-section: "§3.2 / §3.3 / §3.8"
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              type: array
+              description: >
+                Per-region records. Element shape depends on source: measured ⇒
+                MeasuredCountyRecord (§3.2); predicted ⇒ PredictedCountyRecord (§3.3);
+                both ⇒ BothCountyRecord (§3.8, carries resolvedSource).
+              items:
+                $ref: '#/components/schemas/CountyRecord'
+
+    CountyRecord:
+      description: >
+        A per-region analyte record (SPEC §3.2/§3.3/§3.8). The concrete shape is one
+        of measured, predicted, or both-resolved.
+      x-req: REQ-AGG
+      x-spec-section: "§3.2 / §3.3 / §3.8"
+      oneOf:
+        - $ref: '#/components/schemas/MeasuredCountyRecord'
+        - $ref: '#/components/schemas/PredictedCountyRecord'
+        - $ref: '#/components/schemas/BothCountyRecord'
+
+    AggregateStats:
+      type: object
+      description: >
+        Shared statistical block (SPEC §3.2/§3.3). All stats are server-computed
+        (INV-4). Present when not suppressed (measured) / always (predicted).
+      x-req: REQ-AGG
+      x-spec-section: "§3.2"
+      properties:
+        mean:
+          type: number
+          description: Drives absolute colour (SPEC §3.2).
+        stdDev:
+          type: number
+          description: SD divisor per §7-G (sample SD, n−1).
+        median:
+          type: number
+        q1:
+          type: number
+          description: Lower quartile; quantile method §7-G.
+        q3:
+          type: number
+          description: Upper quartile; quantile method §7-G.
+        whiskerLow:
+          type: number
+          description: Tukey 1.5·IQR low whisker (SPEC §3.2).
+        whiskerHigh:
+          type: number
+          description: Tukey 1.5·IQR high whisker (SPEC §3.2).
+
+    MeasuredCountyRecord:
+      type: object
+      description: >
+        County aggregate record from measured (real-sample) data (SPEC §3.2). One per
+        county per (analyte × year × scale). suppressed=true ⇒ all stat fields absent
+        (SPEC §4). Absent record ⇒ no data.
+      x-req: REQ-AGG
+      x-spec-section: "§3.2"
+      required: [regionId, suppressed]
+      properties:
+        regionId:
+          type: string
+        suppressed:
+          type: boolean
+          description: true ⇒ all statistic fields absent (SPEC §4, REQ-STATE-2).
+        reason:
+          type: string
+          description: Present when suppressed (SPEC §3.2/§4).
+          enum: [insufficient-data]
+        sampleCount:
+          type: integer
+          description: Present when not suppressed (SPEC §3.2).
+        fieldCount:
+          type: integer
+          description: Total fields backing the record; present when not suppressed (SPEC §3.2).
+        samplesPerField:
+          type: number
+          description: Rounded 1 dp; present when not suppressed (SPEC §3.2).
+        mean:
+          type: number
+        stdDev:
+          type: number
+        median:
+          type: number
+        q1:
+          type: number
+        q3:
+          type: number
+        whiskerLow:
+          type: number
+        whiskerHigh:
+          type: number
+        benchmarkApplied:
+          description: Resolved benchmark; scale=benchmark only (SPEC §3.2/§3.6).
+          $ref: '#/components/schemas/BenchmarkRef'
+
+    PredictedCountyRecord:
+      type: object
+      description: >
+        Predicted (model-generated) county record (SPEC §3.3). Covers every county;
+        no suppressed/no-data states. MUST NOT carry sampleCount, fieldCount, or
+        confidence (SPEC §3.3, REQ-PRED-3, S16; §7-E DECIDED — no confidence in
+        v0.2.0). MAY carry the county's total fieldCount as a public property for
+        INV-3 scaling (SPEC §3.8) — but never measured counts.
+        NOTE: dummy-server buildPredictedRecords still emits a `confidence` field —
+        stale per §7-E; SPEC governs (no confidence). See coverage-matrix.md.
+      x-req: REQ-PRED
+      x-spec-section: "§3.3"
+      required: [regionId, mean, stdDev, median, q1, q3, whiskerLow, whiskerHigh]
+      properties:
+        regionId:
+          type: string
+        mean:
+          type: number
+        stdDev:
+          type: number
+        median:
+          type: number
+        q1:
+          type: number
+        q3:
+          type: number
+        whiskerLow:
+          type: number
+        whiskerHigh:
+          type: number
+        benchmarkApplied:
+          description: scale=benchmark only (SPEC §3.3/§3.6).
+          $ref: '#/components/schemas/BenchmarkRef'
+
+    BothCountyRecord:
+      type: object
+      description: >
+        Both-mode record (SPEC §3.8). Backend resolves per county: measured if ≥ M
+        fields, else predicted. Carries resolvedSource and the stats for that source.
+      x-req: REQ-PRED
+      x-spec-section: "§3.8"
+      required: [regionId, resolvedSource]
+      properties:
+        regionId:
+          type: string
+        resolvedSource:
+          type: string
+          description: Which source produced this record (SPEC §3.8).
+          enum: [measured, predicted]
+        mean:
+          type: number
+        stdDev:
+          type: number
+        median:
+          type: number
+        q1:
+          type: number
+        q3:
+          type: number
+        whiskerLow:
+          type: number
+        whiskerHigh:
+          type: number
+        sampleCount:
+          type: integer
+          description: Present only when resolvedSource=measured (SPEC §3.8).
+        fieldCount:
+          type: integer
+          description: Present when resolvedSource=measured, or as public county property (SPEC §3.8).
+        benchmarkApplied:
+          $ref: '#/components/schemas/BenchmarkRef'
+
+    BenchmarkRef:
+      type: object
+      description: >
+        Resolved benchmark reference (SPEC §3.6). For a county spanning crops/MLRAs
+        this is generally a distribution or the coarsest level used (§7-D), not a
+        single value.
+      x-req: REQ-AGG
+      x-spec-section: "§3.6"
+      required: [level]
+      properties:
+        level:
+          type: string
+          enum:
+            - crop-mlra
+            - standard-crop-mlra
+            - crop-national
+            - standard-crop-national
+        crop:
+          type: string
+        mlra:
+          type: string
+        value:
+          type: number
+
+    # -----------------------------------------------------------------------
+    # §3.4 Suitability — REQ-RULE-RESULT
+    # -----------------------------------------------------------------------
+    SuitabilityRequest:
+      type: object
+      description: >
+        Criteria to evaluate per county (SPEC §3.4). Each criterion is an AND-
+        combination of clauses (REQ-RULE-1); multi-criterion requests carry one entry
+        per rule with a weight (REQ-WT). step MUST be one of the analyte's filterSteps
+        (REQ-RULE-2, discrete by design).
+      x-req: REQ-RULE-RESULT
+      x-spec-section: "§3.4"
+      required: [criteria]
+      properties:
+        year:
+          type: integer
+          nullable: true
+          description: Year to evaluate (SPEC §3.4).
+        source:
+          $ref: '#/components/schemas/SourceParam'
+        criteria:
+          type: array
+          items:
+            $ref: '#/components/schemas/Criterion'
+
+    Criterion:
+      type: object
+      description: One criterion (rule) — AND-combination of clauses (SPEC §3.4, REQ-RULE-1).
+      x-req: REQ-RULE-RESULT
+      x-spec-section: "§3.4"
+      required: [id, weight, clauses]
+      properties:
+        id:
+          type: string
+        weight:
+          type: number
+          description: Criterion weight; normalised server-side so score ∈ 0–1 (REQ-WT-3).
+        clauses:
+          type: array
+          items:
+            $ref: '#/components/schemas/Clause'
+
+    Clause:
+      type: object
+      description: >
+        One clause — analyte + op + discrete threshold (SPEC §3.4). step MUST be one
+        of that analyte's filterSteps (REQ-RULE-2).
+      x-req: REQ-RULE-RESULT
+      x-spec-section: "§3.4"
+      required: [analyte, op, step]
+      properties:
+        analyte:
+          type: string
+        op:
+          type: string
+          description: Comparison operator (SPEC §3.4 example uses ">=").
+          enum: [">="]
+        step:
+          type: number
+
+    SuitabilityEnvelope:
+      description: Envelope whose data is the suitability response (SPEC §3.4).
+      x-req: REQ-RULE-RESULT
+      x-spec-section: "§3.4"
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/SuitabilityData'
+
+    SuitabilityData:
+      type: object
+      description: Suitability response payload (SPEC §3.4).
+      x-req: REQ-RULE-RESULT
+      x-spec-section: "§3.4"
+      required: [ratingThresholds, regions]
+      properties:
+        ratingThresholds:
+          type: array
+          description: >
+            Fixed [0.30, 0.70] standard (SPEC §7-B); in the response so the frontend
+            never hard-codes them (REQ-RULE-4 stepped RYG cuts).
+          minItems: 2
+          maxItems: 2
+          prefixItems:
+            - type: number
+            - type: number
+          items:
+            type: number
+        regions:
+          type: array
+          items:
+            $ref: '#/components/schemas/SuitabilityRegion'
+        summary:
+          description: >
+            Per-source aggregate match-count summary (S17). NOTE: present in
+            arealApi.ts and dummy-server (SHELL-2026-0678) but NOT defined in SPEC
+            §3.4. Carried as an optional additive field (NFR-VER-1). SPEC governs;
+            recorded as a divergence in coverage-matrix.md.
+          $ref: '#/components/schemas/SuitabilitySummary'
+
+    SuitabilityRegion:
+      type: object
+      description: Per-county suitability result (SPEC §3.4).
+      x-req: REQ-RULE-RESULT
+      x-spec-section: "§3.4"
+      required: [regionId]
+      properties:
+        regionId:
+          type: string
+        measured:
+          description: Present when source includes measured; suppressible (SPEC §3.4).
+          $ref: '#/components/schemas/SuitabilityMeasured'
+        predicted:
+          description: Present when source includes predicted; never suppressed, may be absent (SPEC §3.4).
+          $ref: '#/components/schemas/SuitabilityPredicted'
+
+    SuitabilityMeasured:
+      type: object
+      description: >
+        Measured suitability result for a county (SPEC §3.4). Suppression applies to
+        measured only (privacy). suppressed=true ⇒ score/criteria absent.
+      x-req: REQ-RULE-RESULT
+      x-spec-section: "§3.4"
+      required: [suppressed]
+      properties:
+        suppressed:
+          type: boolean
+        reason:
+          type: string
+          description: Present when suppressed (SPEC §3.4/§4).
+          enum: [insufficient-data, match-count-below-threshold]
+        score:
+          type: number
+          description: 0–1; Σ wᵢ·densityᵢ, weights normalised; present when not suppressed (SPEC §3.4).
+          minimum: 0
+          maximum: 1
+        criteria:
+          type: array
+          description: Per-criterion breakdown; present when not suppressed (SPEC §3.4).
+          items:
+            $ref: '#/components/schemas/SuitabilityCriterionResult'
+
+    SuitabilityPredicted:
+      type: object
+      description: >
+        Predicted suitability result for a county (SPEC §3.4). Never suppressed; may
+        be absent where there is no prediction. predicted.totalFields = all county
+        fields (public property) vs measured.totalFields = fields with samples.
+      x-req: REQ-RULE-RESULT
+      x-spec-section: "§3.4"
+      properties:
+        score:
+          type: number
+          description: 0–1 (SPEC §3.4).
+          minimum: 0
+          maximum: 1
+        criteria:
+          type: array
+          items:
+            $ref: '#/components/schemas/SuitabilityCriterionResult'
+
+    SuitabilityCriterionResult:
+      type: object
+      description: >
+        Per-criterion match breakdown (SPEC §3.4). density = matchingFields /
+        totalFields (INV-3 field-density standardization).
+      x-req: REQ-RULE-RESULT
+      x-spec-section: "§3.4"
+      required: [id, matchingFields, totalFields, density]
+      properties:
+        id:
+          type: string
+        matchingFields:
+          type: integer
+        totalFields:
+          type: integer
+        density:
+          type: number
+          minimum: 0
+          maximum: 1
+
+    SuitabilitySummary:
+      type: object
+      description: >
+        Per-source aggregate match-count summary (S17 / SHELL-2026-0678). A source
+        key is present only when the request's source param includes it. Additive to
+        SPEC §3.4 (see SuitabilityData.summary note).
+      x-req: REQ-RULE-RESULT
+      x-spec-section: "§3.4"
+      properties:
+        measured:
+          $ref: '#/components/schemas/SuitabilitySummarySource'
+        predicted:
+          $ref: '#/components/schemas/SuitabilitySummarySource'
+
+    SuitabilitySummarySource:
+      type: object
+      description: Aggregate match counts for one source (S17).
+      x-req: REQ-RULE-RESULT
+      x-spec-section: "§3.4"
+      required: [matchingFields, totalFields]
+      properties:
+        matchingFields:
+          type: integer
+        totalFields:
+          type: integer
+
+    # -----------------------------------------------------------------------
+    # §3.7 Histogram — REQ-HIST
+    # -----------------------------------------------------------------------
+    HistogramEnvelope:
+      description: Envelope whose data is the histogram payload (SPEC §3.7).
+      x-req: REQ-HIST
+      x-spec-section: "§3.7"
+      allOf:
+        - $ref: '#/components/schemas/Envelope'
+        - type: object
+          required: [data]
+          properties:
+            data:
+              $ref: '#/components/schemas/HistogramData'
+
+    HistogramData:
+      type: object
+      description: >
+        Fixed per-analyte bins + all-region counts (SPEC §3.7). Bins stable across
+        year/source/viewport (decision E1) so the colour ramp and histogram share one
+        ruler. count is the all-region count; the viewport count is computed client-
+        side from already-published aggregates (leaks nothing).
+      x-req: REQ-HIST
+      x-spec-section: "§3.7"
+      required: [valueRange, bins]
+      properties:
+        valueRange:
+          $ref: '#/components/schemas/ValueRange'
+        bins:
+          type: array
+          items:
+            $ref: '#/components/schemas/HistogramBin'
+
+    HistogramBin:
+      type: object
+      description: One fixed histogram bin (SPEC §3.7).
+      x-req: REQ-HIST
+      x-spec-section: "§3.7"
+      required: [from, to, count]
+      properties:
+        from:
+          type: number
+        to:
+          type: number
+        count:
+          type: integer
+          description: All-region count (SPEC §3.7).
+
+    # -----------------------------------------------------------------------
+    # §4 Empty / suppressed / error states — REQ-STATE
+    # -----------------------------------------------------------------------
+    EmptySuppressedState:
+      type: object
+      description: >
+        Documents the four non-normal record forms of SPEC §4 (REQ-STATE-1/2). These
+        are not a distinct wire schema — they are realised by the presence/absence of
+        fields on MeasuredCountyRecord and SuitabilityMeasured:
+          - No data            ⇒ record ABSENT (no MeasuredCountyRecord for the regionId).
+          - Not enough data    ⇒ suppressed:true, reason:'insufficient-data' (< K samples / < M fields).
+          - Zero match         ⇒ density:0, not suppressed (rule met threshold; 0 fields match).
+          - Match-count suppressed ⇒ suppressed:true, reason:'match-count-below-threshold' (1..K′−1 match).
+        REQ-STATE-1: "not enough data" (hatch) and "zero match" (transparent) MUST be
+        distinguishable. REQ-STATE-2: suppressed records carry no statistic.
+      x-req: REQ-STATE
+      x-spec-section: "§4"
+      properties:
+        suppressed:
+          type: boolean
+        reason:
+          type: string
+          enum: [insufficient-data, match-count-below-threshold]
+        density:
+          type: number
+          description: 0 ⇒ zero-match (transparent), not suppressed (SPEC §4).
+
+    # -----------------------------------------------------------------------
+    # Error response (provider-observed; not a SPEC §4 record state)
+    # -----------------------------------------------------------------------
+    ErrorResponse:
+      type: object
+      description: >
+        Transport-level error body observed from the provider/dummy server. Distinct
+        from SPEC §4 record states, which are expressed as record forms, not HTTP
+        errors. The consumer treats absent data as no-data (grey), not as an error.
+      x-req: REQ-STATE
+      x-spec-section: "§4"
+      required: [error]
+      properties:
+        error:
+          type: string
+        analyteId:
+          type: string
+        source:
+          type: string
+        path:
+          type: string

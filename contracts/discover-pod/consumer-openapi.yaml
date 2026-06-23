@@ -163,8 +163,8 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
 
   /areal/suitability:
-    post:
-      operationId: postArealSuitability
+    get:
+      operationId: getArealSuitability
       summary: Suitability scoring — how well each county matches criteria
       description: >
         Evaluates user-defined criteria (agronomic conditions) against each county's
@@ -172,15 +172,20 @@ paths:
         counts + composite score (SPEC §3.4, REQ-RULE-RESULT). Both sources are
         evaluated independently (SPEC §3.4, REQ-RULE-3 / REQ-PRED-5). All scoring is
         server-side (INV-4 — the frontend computes no statistic).
+        Suitability is a read operation, so it is a GET; the SuitabilityRequest is
+        passed as a URL-encoded JSON `request` query parameter.
       tags: [areal]
       x-req: REQ-RULE-RESULT
       x-spec-section: "§3.4"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SuitabilityRequest'
+      parameters:
+        - name: request
+          in: query
+          required: true
+          schema:
+            type: string
+          description: >
+            URL-encoded JSON SuitabilityRequest (see the SuitabilityRequest schema
+            in components/schemas for the structure carried in this parameter).
       responses:
         '200':
           description: Suitability envelope (SPEC §3.4 response).
@@ -189,7 +194,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/SuitabilityEnvelope'
         '400':
-          description: Malformed body (e.g. criteria not an array). Provider-observed.
+          description: Missing or malformed `request` param (e.g. criteria not an array). Provider-observed.
           content:
             application/json:
               schema:

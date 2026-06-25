@@ -1,0 +1,74 @@
+# Level-2 expected-failures manifest — Discover Pod ↔ mt-landvault-api
+#
+# WHAT THIS IS: the AUTHORITATIVE gate semantic for `make level2`. schemathesis
+# checks the live backend against the consumer contract; some checks are EXPECTED
+# to fail because the provider's V1 implementation has documented, accepted
+# divergences from SPEC.md. This manifest enumerates those known deviations so
+# the runner can REPORT them without failing the build. `make level2` exits
+# non-zero ONLY on an UNEXPECTED failure (one not matched here).
+#
+# Because this manifest — not a hand-tuned CI flag — is the gate semantic, the
+# provider CI (DATA-2026-0068) can later drop any transitional `|| true` wrapper
+# once DATA-2026-0076 lands and rely on this file to discriminate known-vs-real.
+#
+# PROVENANCE: derived from the divergence docs on branch
+# data-2026-spec-conformance-v3 (PR #80) of mt-landvault-api:
+#   mt-landvault-api/docs/divergences/DATA-2026-0071-suitability-v1.md
+#   mt-landvault-api/docs/divergences/DATA-2026-0073-catalogue-v1.md
+#   mt-landvault-api/docs/divergences/DATA-2026-0074-county-records-v1.md
+# This manifest is v3-branch-derived and PENDING RE-CONFIRMATION when PR #80
+# merges (mirrors the level1 readiness note). Re-verify the path/divergence set
+# against provider main at that point.
+#
+# MATCH SEMANTICS (consumed by run-level2.py):
+#   A schemathesis failure is "expected" iff its request path matches `path`
+#   (the templated OpenAPI path) AND its failing check name is in `checks`.
+#   Anything else is unexpected and fails the build.
+
+version: 1
+
+# Divergence classes keyed to the provider issues. Each entry names the
+# endpoint(s) under test, the schemathesis check(s) expected to fail, and the
+# SPEC clause the V1 implementation does not yet satisfy.
+expected_failures:
+  - issue: DATA-2026-0071
+    title: Suitability V1 — binary density, no measured/predicted split, no suppression
+    path: /areal/suitability
+    spec: SPEC.md §3.4 (REQ-RULE-RESULT)
+    # The response SHAPE is conformant; the divergences are VALUE-level
+    # (density ∈ {0,1}; measured==predicted under source=both; suppressed
+    # always false). schemathesis response-schema conformance passes; semantic
+    # value expectations it cannot derive from the schema are not checked, but
+    # any data/property-level check that trips on these values is expected.
+    checks:
+      - response_schema_conformance
+      - response_conformance
+    notes: >
+      Binary density (totalFields=1), identical measured/predicted scores under
+      source=both, and measured.suppressed always false. To wire later: a
+      field-grain measurements source.
+
+  - issue: DATA-2026-0073
+    title: Catalogue V1 — derived/placeholder analyte metadata, placeholder thresholds
+    path: /areal
+    spec: SPEC.md §3.1 (REQ-META)
+    checks:
+      - response_schema_conformance
+      - response_conformance
+    notes: >
+      label derived via humanizeLabel; unit ""; category default "chemistry";
+      benchmarkScalable false; filterSteps []; thresholds K=M=Kprime=5
+      placeholder; regions omitted (optional). Shape is conformant.
+
+  - issue: DATA-2026-0074
+    title: County records V1 — degenerate one-point stats, no suppression, both→measured
+    path: /areal/analytes/{analyteId}
+    spec: SPEC.md §3.2 / §3.3 / §3.8 / §4
+    checks:
+      - response_schema_conformance
+      - response_conformance
+    notes: >
+      stats are the exact statistics of a single avg_value (stdDev=0; quantiles
+      collapse to the point); suppressed always false; source=both resolves to
+      resolvedSource="measured" for every county. Shape (oneOf union) is
+      conformant. To wire later: a field-grain source.

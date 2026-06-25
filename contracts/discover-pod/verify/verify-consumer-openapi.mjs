@@ -9,11 +9,12 @@
  *
  * Target document (default): ../consumer-openapi.yaml
  *
- * Run:
+ * Run (reproducible — package.json + package-lock.json are checked in here):
  *   cd landvault-contracts/contracts/discover-pod/verify
- *   npm init -y >/dev/null 2>&1            # only if no package.json yet
- *   npm install --no-save js-yaml @apidevtools/swagger-parser
+ *   npm ci                                 # installs js-yaml + swagger-parser from lockfile
  *   node verify-consumer-openapi.mjs [path-to-openapi.yaml]
+ *
+ * Or from the repo root: `make verify-spec`.
  *
  * Exit code 0 = all checks pass. Non-zero = at least one FAIL.
  *
@@ -106,7 +107,7 @@ const ENDPOINTS = [
   { method: 'GET',  path: '/areal',                       req: 'REQ-META',        spec: '§3.1' },
   { method: 'GET',  path: '/areal/regions',               req: null,              spec: '§3.0 (geometry/PMTiles)' },
   { method: 'GET',  path: '/areal/analytes/{analyteId}',  req: 'REQ-AGG/REQ-PRED', spec: '§3.2/§3.3/§3.8' },
-  { method: 'POST', path: '/areal/suitability',           req: 'REQ-RULE-RESULT', spec: '§3.4' },
+  { method: 'GET',  path: '/areal/suitability',           req: 'REQ-RULE-RESULT', spec: '§3.4' },
   { method: 'GET',  path: '/areal/histograms/{analyteId}', req: 'REQ-HIST',       spec: '§3.7' },
 ];
 
@@ -227,7 +228,7 @@ const REQUIRED_REQ_TAGS = [
   'REQ-META',        // §3.1 GET /areal
   'REQ-AGG',         // §3.2 measured aggregate record
   'REQ-PRED',        // §3.3 predicted aggregate record
-  'REQ-RULE-RESULT', // §3.4 POST /areal/suitability
+  'REQ-RULE-RESULT', // §3.4 GET /areal/suitability
   'REQ-HIST',        // §3.7 GET /areal/histograms/{id}
   'REQ-STATE-1',     // §4 distinct empty/suppressed states
   'REQ-STATE-2',     // §4 render suppressed without statistics
@@ -302,9 +303,26 @@ check('C8-rule-fields',
   RULE_FIELDS.every((f) => new RegExp(`\\b${f}\\b`).test(docText)),
   `§3.4 suitability response fields present (${RULE_FIELDS.join(', ')})`);
 // ratingThresholds fixed [0.30,0.70] standard — value presence is informational.
-check('C8-rule-request-criteria',
-  /\bclauses\b/.test(docText) && /\bweight\b/.test(docText) && /\bstep\b/.test(docText),
-  '§3.4 suitability REQUEST body shape present (criteria/clauses/weight/step)');
+// §3.4 + DATA-2026-0071 (merged PR #1): suitability is a GET (read op). The
+// SuitabilityRequest is NOT a POST body — it is carried as a URL-encoded JSON
+// `request` query parameter. Assert both: (a) the GET operation declares a
+// `request` query param, and (b) the SuitabilityRequest schema shape is present
+// (criteria/clauses/weight/step) in components/schemas.
+{
+  const op = findOp('GET', '/areal/suitability');
+  let hasRequestQueryParam = false;
+  if (op) {
+    const params = collectParams(paths, op.rawPath, op.op);
+    hasRequestQueryParam = params.some((p) => p.name === 'request' && p.in === 'query');
+  }
+  const hasRequestShape =
+    /\bclauses\b/.test(docText) && /\bweight\b/.test(docText) && /\bstep\b/.test(docText);
+  check('C8-rule-request-criteria',
+    hasRequestQueryParam && hasRequestShape,
+    '§3.4 suitability is GET with a URL-encoded `request` query param, and the ' +
+    'SuitabilityRequest shape (criteria/clauses/weight/step) is present ' +
+    `(query-param: ${hasRequestQueryParam}, shape: ${hasRequestShape})`);
+}
 
 // §3.7 REQ-HIST histogram response fields
 const HIST_FIELDS = ['valueRange','bins','from','to','count'];

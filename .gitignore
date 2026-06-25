@@ -1,3 +1,13 @@
 .cage/
 .claude/
 node_modules/
+
+# Provisioned oasdiff binary (level1) — pinned + downloaded by run-level1.sh,
+# not committed. Provisioning is documented in the script and README.
+/bin/
+
+# uv-managed level2 virtualenv — created from level2/uv.lock, not committed.
+contracts/discover-pod/level2/.venv/
+
+# Python bytecode cache (level2 runner)
+__pycache__/

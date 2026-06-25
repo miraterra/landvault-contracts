@@ -1,0 +1,14 @@
+{
+  "name": "@landvault/discover-pod-verify",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Node acceptance verifier (verify-spec): proves consumer-openapi.yaml faithfully encodes SPEC.md. Wrapped by `make verify-spec` at the repo root.",
+  "type": "module",
+  "scripts": {
+    "verify": "node verify-consumer-openapi.mjs"
+  },
+  "dependencies": {
+    "@apidevtools/swagger-parser": "^10.1.0",
+    "js-yaml": "^4.1.0"
+  }
+}

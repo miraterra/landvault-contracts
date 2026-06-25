@@ -1,0 +1,15 @@
+[project]
+name = "landvault-discover-pod-level2"
+version = "0.2.0"
+description = "Level-2 dynamic conformance harness (schemathesis) for the Discover Pod consumer contract. Driven by `make level2`."
+requires-python = ">=3.11"
+# Pinned for reproducibility. schemathesis 4.x CLI: `-u/--url` base-URL override,
+# `-a` basic auth, `--checks`, `--report ndjson`. Bump deliberately, not silently.
+dependencies = [
+    "schemathesis==4.21.10",
+    "pyyaml==6.0.2",
+]
+
+[tool.uv]
+# No build backend needed — this is a runner, not a distributable package.
+package = false

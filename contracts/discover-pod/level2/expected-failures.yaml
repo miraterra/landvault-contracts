@@ -2,23 +2,26 @@
 #
 # WHAT THIS IS: the AUTHORITATIVE gate semantic for `make level2`. schemathesis
 # checks the live backend against the consumer contract; some checks are EXPECTED
-# to fail because the provider's V1 implementation has documented, accepted
-# divergences from SPEC.md. This manifest enumerates those known deviations so
-# the runner can REPORT them without failing the build. `make level2` exits
-# non-zero ONLY on an UNEXPECTED failure (one not matched here).
+# to fail because the provider's current implementation diverges from SPEC.md.
+# This manifest enumerates those known deviations so the runner can REPORT them
+# without failing the build. `make level2` exits non-zero ONLY on an UNEXPECTED
+# failure (one not matched here).
 #
-# Because this manifest — not a hand-tuned CI flag — is the gate semantic, the
-# provider CI (DATA-2026-0068) can later drop any transitional `|| true` wrapper
-# once DATA-2026-0076 lands and rely on this file to discriminate known-vs-real.
+# PROVENANCE (refreshed 2026-06-26): reflects what is actually deployed on
+# mt-landvault-api **main** (landed via PR #82) — NOT the abandoned v3 branch
+# (PR #80, closed). The earlier divergence docs this file was derived from never
+# landed on main. The current gaps and their fixes are tracked on the provider
+# board and in the conformance punch list:
+#   mt-landvault-api#85  — /areal/regions format:binary (swag generator limit; see #88)
+#   mt-landvault-api#86  — Level-2 CI wiring + the conformance punch list (comments)
+#   mt-landvault-api#88  — suitability 400 error object (MERGES -> drop that aspect)
 #
-# PROVENANCE: derived from the divergence docs on branch
-# data-2026-spec-conformance-v3 (PR #80) of mt-landvault-api:
-#   mt-landvault-api/docs/divergences/DATA-2026-0071-suitability-v1.md
-#   mt-landvault-api/docs/divergences/DATA-2026-0073-catalogue-v1.md
-#   mt-landvault-api/docs/divergences/DATA-2026-0074-county-records-v1.md
-# This manifest is v3-branch-derived and PENDING RE-CONFIRMATION when PR #80
-# merges (mirrors the level1 readiness note). Re-verify the path/divergence set
-# against provider main at that point.
+# IMPORTANT — these are mostly STRUCTURAL, not value-level: on main the envelope
+# `data` is untyped ({}) and the JSON endpoints are not yet typed to the contract
+# (bare-string catalogue, raw-row county records, {bucket_id,frequency} histograms).
+# So response_schema_conformance is expected to fail on these paths until the
+# typed work lands. REMOVE each entry as its fix ships (suitability -> #88;
+# catalogue/county -> the P4 typed structs; histograms -> wiring ComputeHistogram).
 #
 # MATCH SEMANTICS (consumed by run-level2.py):
 #   A schemathesis failure is "expected" iff its request path matches `path`
@@ -27,48 +30,64 @@
 
 version: 1
 
-# Divergence classes keyed to the provider issues. Each entry names the
-# endpoint(s) under test, the schemathesis check(s) expected to fail, and the
-# SPEC clause the V1 implementation does not yet satisfy.
 expected_failures:
-  - issue: DATA-2026-0071
-    title: Suitability V1 — binary density, no measured/predicted split, no suppression
-    path: /areal/suitability
-    spec: SPEC.md §3.4 (REQ-RULE-RESULT)
-    # The response SHAPE is conformant; the divergences are VALUE-level
-    # (density ∈ {0,1}; measured==predicted under source=both; suppressed
-    # always false). schemathesis response-schema conformance passes; semantic
-    # value expectations it cannot derive from the schema are not checked, but
-    # any data/property-level check that trips on these values is expected.
+  - issue: mt-landvault-api#85
+    title: Regions — response declared string (no format:binary)
+    path: /areal/regions
+    spec: SPEC.md §3.0 (binary PMTiles stream)
     checks:
       - response_schema_conformance
       - response_conformance
     notes: >
-      Binary density (totalFields=1), identical measured/predicted scores under
-      source=both, and measured.suppressed always false. To wire later: a
-      field-grain measurements source.
+      Behavior is correct (application/x-protobuf binary stream); the spec omits
+      format:binary because swag v2 can't emit it on a primitive body (see #88).
+      Drop when the generator workaround lands.
 
-  - issue: DATA-2026-0073
-    title: Catalogue V1 — derived/placeholder analyte metadata, placeholder thresholds
+  - issue: catalogue (mt-landvault-api#86 punch list / DATA-2026-0073)
+    title: Catalogue — untyped, bare-string analytes/crops, no thresholds
     path: /areal
     spec: SPEC.md §3.1 (REQ-META)
     checks:
       - response_schema_conformance
       - response_conformance
     notes: >
-      label derived via humanizeLabel; unit ""; category default "chemistry";
-      benchmarkScalable false; filterSteps []; thresholds K=M=Kprime=5
-      placeholder; regions omitted (optional). Shape is conformant.
+      On main GET /areal returns {analytes:[]string, years:[]int, crops:[]string}
+      with no thresholds — not the typed CatalogueData. Structural, not value-level.
+      Drop when the P4 typed catalogue (AnalyteCatalogueEntry/Crop/SuppressionThresholds) ships.
 
-  - issue: DATA-2026-0074
-    title: County records V1 — degenerate one-point stats, no suppression, both→measured
+  - issue: county-records (mt-landvault-api#86 punch list / DATA-2026-0074)
+    title: County records — raw rows, no regionId keying / oneOf / suppression
     path: /areal/analytes/{analyteId}
     spec: SPEC.md §3.2 / §3.3 / §3.8 / §4
     checks:
       - response_schema_conformance
       - response_conformance
     notes: >
-      stats are the exact statistics of a single avg_value (stdDev=0; quantiles
-      collapse to the point); suppressed always false; source=both resolves to
-      resolvedSource="measured" for every county. Shape (oneOf union) is
-      conformant. To wire later: a field-grain source.
+      On main the endpoint returns raw Postgres rows (untyped), not the
+      measured/predicted/both CountyRecord oneOf keyed by regionId, and ignores
+      source/year/scale/crop. Structural. Drop when the P4 typed county records ship.
+
+  - issue: histograms (mt-landvault-api#86 punch list / DATA-2026-0069)
+    title: Histograms — {bucket_id,frequency} rows, not §3.7 {valueRange,bins}
+    path: /areal/histograms/{analyteId}
+    spec: SPEC.md §3.7 (REQ-HIST)
+    checks:
+      - response_schema_conformance
+      - response_conformance
+    notes: >
+      On main the handler returns {bucket_id, frequency} rows. The contract requires
+      {valueRange, bins:[{from,to,count}]}. The correct ComputeHistogram/HistogramResponse
+      exists (dead code on a branch) — drop this entry when it's wired in + merged.
+
+  - issue: mt-landvault-api#88 (suitability 400)
+    title: Suitability — 400 error shape (pre-#88) + V1 value-level divergences
+    path: /areal/suitability
+    spec: SPEC.md §3.4 (REQ-RULE-RESULT)
+    checks:
+      - response_schema_conformance
+      - response_conformance
+    notes: >
+      Two things: (1) the 400 body was a bare string instead of the required
+      {error,...} object — FIXED by #88, drop that aspect when #88 merges; (2) V1
+      value-level divergences remain (binary density, measured==predicted under
+      source=both, suppressed always false) pending a field-grain measurements source.

@@ -25,10 +25,25 @@
 #   distinct non-zero status (3) and a SKIPPED/non-conformant banner — it never
 #   exits 0 as if "the specs agree".
 #
+# FAIL POLICY (DECIDED — ADR-0058 hard gate; BE 2026-06-25, CCT-2026-0010):
+#   The breaking-change check runs `oasdiff breaking --fail-on ERR`. The
+#   `--fail-on ERR` flag is LOAD-BEARING: `oasdiff breaking` exits 0 regardless
+#   of findings unless an explicit `--fail-on {ERR|WARN}` is given. Without it
+#   the gate is a FALSE GREEN — it passes even on ERROR-level breaking changes.
+#
+#   ERROR-level findings FAIL the gate (exit 1). WARN-level findings are
+#   REPORT-ONLY: they do NOT fail the gate, but they ARE printed loudly in the
+#   full breaking report above the gate decision. Rationale: ADR-0058 permits
+#   additive provider changes within a major version, and oasdiff WARN-class
+#   changes (e.g. optional request-parameter removals) are non-breaking for the
+#   consumer; failing on WARN would block changes the policy allows. Report-only
+#   must NOT become a new silent pass, so WARN output is never suppressed and is
+#   never hidden behind `|| true` — it is surfaced, just not gating.
+#
 # Exit codes:
-#   0  — oasdiff ran and the specs are compatible (no breaking changes)
-#   1  — oasdiff ran and reported breaking changes (diff produced)
-#   2  — usage / tooling error (download failed, oasdiff unusable)
+#   0  — oasdiff ran; no ERROR-level breaking changes (WARN may be present, reported)
+#   1  — oasdiff ran and reported ERROR-level breaking changes (gate FAILS)
+#   2  — usage / tooling error (download failed, oasdiff unusable, bad invocation)
 #   3  — SKIPPED: PROVIDER_SPEC unset or unreachable (NOT a pass)
 set -euo pipefail
 
@@ -113,11 +128,29 @@ echo
 "${OASDIFF}" diff "${CONSUMER_SPEC}" "${PROVIDER_LOCAL}" || true
 echo
 echo "--- breaking-change check (consumer as base) ---"
-# `breaking` exits non-zero when breaking changes exist; that is the gate.
-if "${OASDIFF}" breaking "${CONSUMER_SPEC}" "${PROVIDER_LOCAL}"; then
-  echo "level1: PASS — no breaking differences between consumer and provider specs."
-  exit 0
-else
-  echo "level1: breaking differences reported above (consumer vs provider)."
-  exit 1
-fi
+# FAIL POLICY (see header): `oasdiff breaking` exits 0 regardless of findings
+# unless an explicit `--fail-on {ERR|WARN}` is given. We pass `--fail-on ERR` so
+# ERROR-level breaking changes — and only those — make oasdiff exit non-zero and
+# FAIL the gate. WARN-level findings remain report-only: they are printed in the
+# breaking report above but do not gate (ADR-0058 permits additive changes).
+#
+# oasdiff exit semantics under `--fail-on ERR`:
+#   0   — no ERROR-level breaking changes (WARN may be present; reported, not gating)
+#   1   — at least one ERROR-level breaking change → gate FAILS
+#   >=2 — oasdiff tooling/usage error (bad spec parse, bad flags). This is a
+#         DIFFERENT failure than red-on-break and must not be reported as
+#         "breaking changes found": surface it as a tooling error (exit 2).
+set +e
+"${OASDIFF}" breaking --fail-on ERR "${CONSUMER_SPEC}" "${PROVIDER_LOCAL}"
+oasdiff_rc=$?
+set -e
+case "${oasdiff_rc}" in
+  0)
+    echo "level1: PASS — no ERROR-level breaking changes (WARN findings, if any, are reported above and are report-only per ADR-0058)."
+    exit 0 ;;
+  1)
+    echo "level1: FAIL — ERROR-level breaking changes reported above (consumer vs provider)."
+    exit 1 ;;
+  *)
+    fail_tool "oasdiff breaking exited ${oasdiff_rc} (tooling/usage error, not a breaking-change result)" ;;
+esac

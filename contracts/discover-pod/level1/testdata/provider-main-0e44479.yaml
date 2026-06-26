@@ -1,0 +1,288 @@
+components:
+  schemas:
+    envelope.Envelope:
+      properties:
+        contractVersion:
+          type: string
+        data: {}
+        generatedAt:
+          format: date-time
+          type: string
+        query: {}
+      required:
+      - contractVersion
+      - data
+      - generatedAt
+      type: object
+externalDocs:
+  description: ""
+  url: ""
+info:
+  description: Agricultural data API serving areal and field insights.
+  title: Landvault API
+  version: 3.0.4
+openapi: 3.1.0
+paths:
+  /areal:
+    get:
+      description: |-
+        Returns the full catalogue of available analytes (from the county aggregate),
+        plus the available years and crop types extracted from the PMTile sidecar
+        metadata in S3. Use this to populate layer-selection controls on the frontend.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/envelope.Envelope'
+          description: Standard envelope; data is the ArealCatalogue.
+        "500":
+          content:
+            application/json:
+              schema:
+                type: string
+          description: internal error
+      summary: Areal catalogue
+      tags:
+      - data
+  /areal/analytes/{analyteId}:
+    get:
+      description: |-
+        Returns rows of a specific analyte from Supabase.
+
+        **Column selection:** use `columns` to choose which columns appear in the response.
+        Example: `field_id,avg_value`
+
+        **Filtering:** use `filters` to narrow rows. Format is `column=opvalue` pairs joined by `&`.
+        The `=` is always the key-value separator; place the operator directly before the value:
+        - Equality:              `region=Iowa`
+        - Greater-than-or-equal: `max_value=>=20`
+        - Less-than-or-equal:    `max_value=<=20`
+        - Greater-than:          `max_value=>20`
+        - Less-than:             `max_value=<20`
+
+        **Note:** do not use bare `>` or `<` without the leading `=` separator — Swagger UI will
+        percent-encode them and the filter will be silently dropped.
+      parameters:
+      - description: Analyte identifier (e.g. caco3)
+        in: path
+        name: analyteId
+        required: true
+        schema:
+          type: string
+      - description: Comma-separated column names to return. Omit for all columns.
+        example: max_value,avg_value
+        in: query
+        name: columns
+        schema:
+          type: string
+      - description: 'Filter pairs: column=opvalue joined by &. Example: max_value=>=6&region=Iowa'
+        example: max_value=>=6&region=Iowa
+        in: query
+        name: filters
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/envelope.Envelope'
+          description: Standard envelope; data is the array of PostGres rows returned.
+        "500":
+          content:
+            application/json:
+              schema:
+                type: string
+          description: internal error
+      summary: Areal Analyte Data
+      tags:
+      - data
+  /areal/histograms/{analyteId}:
+    get:
+      description: |-
+        Returns WIDTH_BUCKET histogram bins for a single analyte across all counties.
+
+        Each row contains `bucket_id` (1-based bin index) and `frequency` (count of counties
+        in that bin). The bins are computed over the analyte's own [min, max] value range.
+      parameters:
+      - description: Analyte identifier (e.g. acaulospora_colombiana)
+        in: path
+        name: analyteId
+        required: true
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/envelope.Envelope'
+          description: Standard envelope; data is the array of {bucket_id, frequency}
+            rows.
+        "500":
+          content:
+            application/json:
+              schema:
+                type: string
+          description: internal error
+      summary: Analyte histogram
+      tags:
+      - data
+  /areal/prediction:
+    get:
+      description: |-
+        Returns a paginated page of analyte prediction rows. Follow `next_offset` until `has_more` is false.
+
+        **Pagination:** use `limit` and `offset` to page through results.
+
+        **Column selection:** use `columns` to return only specific fields instead of all columns.
+
+        **Filtering:** any query param that is not `limit`, `offset`, or `columns` is treated as a
+        WHERE condition on the column of that name. Values support comparison operators as a prefix:
+        `>5`  `>=5`  `<5`  `<=5`  or a bare value for equality (e.g. `nitrogen`).
+
+        Because filter params are column-specific and the schema is dynamic, they cannot be shown
+        as form fields here. Add them directly to the request URL in the field below, for example:
+        `/areal/prediction?analyte=nitrogen&predicted_value=>0.5&columns=analyte,predicted_value&limit=50`
+      parameters:
+      - description: Layer to return
+        example: predictions_fields
+        in: query
+        name: layer
+        schema:
+          type: string
+      - description: Max rows per page. Defaults to 5 when no filters are present.
+        example: 50
+        in: query
+        name: limit
+        schema:
+          minimum: 1
+          type: integer
+      - description: Rows to skip. Increment by limit each page until has_more is
+          false.
+        example: 0
+        in: query
+        name: offset
+        schema:
+          minimum: 0
+          type: integer
+      - description: Comma-separated columns to SELECT. Omit for all columns.
+        example: analyte,predicted_value,geometry
+        in: query
+        name: columns
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/envelope.Envelope'
+          description: Standard envelope; data is the paginated result (rows + pagination
+            cursors).
+        "500":
+          content:
+            application/json:
+              schema:
+                type: string
+          description: internal error
+      summary: Field data
+      tags:
+      - data
+  /areal/regions:
+    get:
+      description: |-
+        Returns the county polygons PMTiles archive as a binary stream.
+        Supports HTTP byte-range requests (Accept-Ranges: bytes) so the
+        browser PMTiles client can fetch only the index and the tiles it needs.
+        Features carry { regionId, name, state } and no measurement values
+        (SPEC §3.0). This is a binary tile endpoint — no JSON envelope.
+      parameters:
+      - description: HTTP byte-range request for partial PMTiles fetch
+        example: bytes=0-16383
+        in: header
+        name: Range
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/x-protobuf:
+              schema:
+                type: string
+          description: Full PMTiles archive
+        "206":
+          content:
+            application/x-protobuf:
+              schema:
+                type: string
+          description: Partial content for a byte range
+        "404":
+          content:
+            application/x-protobuf:
+              schema:
+                type: string
+          description: archive not found
+        "500":
+          content:
+            application/x-protobuf:
+              schema:
+                type: string
+          description: internal error
+      summary: Region (county) geometry as PMTiles
+      tags:
+      - tiles
+  /areal/suitability:
+    get:
+      description: |-
+        Returns rows of areal analyte data based from Supabase. Typically used to identify counties meeting a specific or range of criteria based on conditions for a product capability.
+
+        **Column selection:** use `columns` to choose which columns appear in the response.
+        Example: `analyte,avg_value,region`
+
+        **Filtering:** use `filters` to narrow rows. Format is `column=opvalue` pairs joined by `&`.
+        The `=` is always the key-value separator; place the operator directly before the value:
+        - Equality:              `analyte=caco3`
+        - Greater-than-or-equal: `avg_value=>=5`
+        - Less-than-or-equal:    `avg_value=<=20`
+        - Greater-than:          `avg_value=>5`
+        - Less-than:             `avg_value=<20`
+      parameters:
+      - description: Comma-separated column names to return. Omit for all columns.
+        example: analyte,avg_value,region
+        in: query
+        name: columns
+        schema:
+          type: string
+      - description: 'Filter pairs: column=opvalue joined by &. Example: analyte=caco3&avg_value=>=5'
+        example: analyte=caco3&avg_value=>=5
+        in: query
+        name: filters
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/envelope.Envelope'
+          description: Standard envelope; data is the array of PostGres rows returned.
+        "500":
+          content:
+            application/json:
+              schema:
+                type: string
+          description: internal error
+      summary: Suitable Areal Data
+      tags:
+      - data
+  /healthz:
+    get:
+      description: Returns 200 OK if the API is running
+      responses:
+        "200":
+          description: OK
+      summary: Health check
+      tags:
+      - system

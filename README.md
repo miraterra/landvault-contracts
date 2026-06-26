@@ -7,6 +7,8 @@ Consumer OpenAPI artifacts, REQ-tagged schemas, and coverage matrices live here 
 ## Structure
 
 ```
+.github/workflows/
+  verify-spec.yml        # this repo's own CI: runs verify-spec + selftest (CCT-2026-0011)
 Makefile                 # runner entrypoint: verify-spec / level1 / level2 / test
 contracts/
   discover-pod/          # Discover Pod ↔ mt-landvault-api boundary
@@ -14,6 +16,8 @@ contracts/
     coverage-matrix.md     # §8 REQ-* coverage tracking
     verify/                # Level: spec-acceptance (Node)
       verify-consumer-openapi.mjs  # asserts the spec encodes SPEC.md
+      run-verify-spec.test.sh      # committed red-path self-test (CCT-2026-0011)
+      testdata/                    # non-conforming fixture(s) for the self-test
       package.json / package-lock.json
     level1/                # Level-1: static spec diff (oasdiff)
       run-level1.sh
@@ -31,9 +35,28 @@ and reports results. The tool choice (oasdiff, schemathesis) is encapsulated
 here; CI pipelines in the shell (SHELL-2026-0701) and the provider
 (DATA-2026-0068) invoke the runner — they do not own the test logic.
 
+The gate has **three CI homes** (the settled wiring design, CCT-2026-0007):
+**this repo's own CI** runs `verify-spec` (the contract-authoring fidelity
+self-check — see [Self-verification in CI](#self-verification-in-ci) below);
+**the shell** (SHELL-2026-0701) runs `level1` (the consumer↔provider boundary
+diff); **the provider** (DATA-2026-0068) runs `level2` (dynamic conformance).
+verify-spec lives here because it guards the *fidelity of the contract artifact
+to its normative source*, a different class from the consumer↔provider boundary
+gates — and because it is hermetic (it needs only this repo, see below), there
+is no reason to run it anywhere else.
+
+> **SPEC.md boundary (do not overclaim).** `verify-spec` proves the consumer
+> spec *as committed* encodes SPEC.md, but **SPEC.md itself lives in
+> landvault-shell**, not this repo — so a SPEC.md change there cannot trigger
+> this workflow and is **not auto-caught**. Fidelity is enforced at
+> *assertion-authoring time* (when the verifier's C0–C8 assertions are written
+> from SPEC.md), not by this CI run. The CI run only re-checks the contract
+> against those baked-in assertions on every contract edit.
+
 | Target                 | What it checks                                                  | Runtime         |
 |------------------------|-----------------------------------------------------------------|-----------------|
 | `make verify-spec`     | The consumer spec faithfully encodes SPEC.md (spec-acceptance)  | Node            |
+| `make verify-spec-selftest` | Regression guard for the verify-spec fidelity red-path (committed fixture) | Node |
 | `make level1`          | Consumer spec vs PROVIDER spec (static diff — ADR-0066 level 1) | oasdiff Go binary |
 | `make level1-selftest` | Regression guard for the level1 fail policy (committed fixtures) | oasdiff Go binary |
 | `make level2`          | Consumer spec vs a running backend (dynamic — ADR-0066 level 2) | Python via `uv` |
@@ -132,6 +155,44 @@ The policy (decided, not configurable per-run):
 The current WARN items (the `crop`/`scale`/`source`/`year` removals on
 `/areal/analytes` and `request` on `/areal/suitability`) are tracked separately
 as DATA-2026-0073 / DATA-2026-0074.
+
+### Self-verification in CI
+
+This package **self-verifies** (CCT-2026-0011). `.github/workflows/verify-spec.yml`
+runs `make verify-spec` on every PR (and on pushes touching `contracts/**`, the
+`Makefile`, or the workflow itself), so the contract artifact cannot silently
+drift away from its assertions on a contract edit. The job is hermetic — it
+checks out only this repo, sets up a **pinned Node major** (`actions/setup-node@v4`,
+`node-version: '20'`), and runs `npm ci` against the committed
+`contracts/discover-pod/verify/package-lock.json`. No backend, no cross-repo
+checkout, no token. A non-zero exit **fails the PR** — there is no `|| true`,
+`continue-on-error`, or exit-swallowing wrapper. Scope is `verify-spec` only;
+`level1` is the shell's gate home and is deliberately not run here.
+
+The same job then runs `make verify-spec-selftest` (below), so the
+no-false-green guarantee is **test-enforced** on every run, not merely asserted.
+
+### Verify-spec fidelity regression guard (`make verify-spec-selftest`)
+
+`contracts/discover-pod/verify/run-verify-spec.test.sh` is a committed,
+repeatable self-test that drives the verifier **directly against a committed
+non-conforming fixture** under `contracts/discover-pod/verify/testdata/` (not via
+`make verify-spec`, which targets the real, passing spec):
+
+| Fixture                     | Expectation                                                                |
+|-----------------------------|----------------------------------------------------------------------------|
+| `missing-source-enum.yaml`  | exit 1 (FAIL) **and** the output names the `C3-source-enum` business assertion. |
+
+The fixture is a structurally-valid OpenAPI 3.1 copy of the real consumer spec
+with exactly **one** real SPEC-fidelity defect: `SourceParam.enum` drops `both`
+(SPEC §3.8 requires `measured | predicted | both`). The red-path assertion is
+**content-based**, not exit-code-only: an exit `!= 0` alone is not proof of
+red-on-*drift* — the verifier also exits 1 on a corrupt/unparseable file (a
+`C0-parse` failure). So the test additionally asserts that the failing check is
+the **semantic** `C3-source-enum` and that the structural floor still holds
+(`C0-parse` and `C0-deref` both PASS), proving the red is fidelity drift, not
+corruption. This mirrors the level-1 guard's lesson: a gate with no committed
+test of its *failing* path can rot into a false green.
 
 ### Level-1 fail-policy regression guard (`make level1-selftest`)
 

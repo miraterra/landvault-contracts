@@ -1,0 +1,60 @@
+name: verify-spec
+
+# The contract package self-verifies (CCT-2026-0011). This is the THIRD gate
+# home in the settled wiring design (CCT-2026-0007): verify-spec runs in
+# landvault-contracts' OWN CI; level1 lives in the shell (SHELL-2026-0701) and
+# level2 in the provider (DATA-2026-0068).
+#
+# verify-spec is the contract-authoring FIDELITY self-check: it proves
+# consumer-openapi.yaml faithfully encodes SPEC.md. It is fast and HERMETIC —
+# it reads only the in-repo consumer OpenAPI (SPEC.md requirements are baked
+# into the verifier's assertions at authoring time, NOT read at runtime). So
+# the job needs only a checkout of THIS repo + Node + `npm ci` against the
+# committed lockfile. No backend, no cross-repo checkout, no token.
+#
+# SCOPE: verify-spec ONLY. `make level1` is deliberately NOT run here — it is
+# the consumer<->provider boundary gate (the shell's home) and needs a provider
+# spec; running it here would conflate fidelity with conformance and make this
+# CI flaky for reasons unrelated to contract fidelity.
+#
+# Triggers: every PR (unconditional — verify-spec is fast and hermetic, so the
+# safe default that can never silently skip a contract edit), PLUS pushes that
+# touch the contract, the verifier, the Makefile, or this workflow.
+
+on:
+  pull_request:
+  push:
+    paths:
+      - 'contracts/**'
+      - 'contracts/**/verify/**'
+      - 'Makefile'
+      - '.github/workflows/verify-spec.yml'
+
+jobs:
+  verify-spec:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node (pinned major)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: contracts/discover-pod/verify/package-lock.json
+
+      # verify-spec: the verifier MUST pass against the real consumer spec.
+      # `make verify-spec` runs `npm ci` against the committed lockfile then
+      # `node verify-consumer-openapi.mjs` with no path arg (targets the real
+      # ../consumer-openapi.yaml). Non-zero exit fails the job — no `|| true`,
+      # no continue-on-error, no exit-swallowing wrapper.
+      - name: Verify consumer-openapi faithfully encodes SPEC.md
+        run: make verify-spec
+
+      # verify-spec-selftest: the committed red-path regression guard. Drives
+      # the verifier against a non-conforming fixture and asserts it goes RED on
+      # a real fidelity drift (and names the failed check). This makes the
+      # no-silent-pass guarantee test-enforced, not merely asserted.
+      - name: Self-test the verifier red-path (no false green)
+        run: make verify-spec-selftest

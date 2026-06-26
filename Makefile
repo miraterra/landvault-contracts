@@ -25,15 +25,17 @@
 # ADR-0061/0062 execution independence).
 
 VERIFY_DIR     := contracts/discover-pod/verify
+VERIFY_SELFTEST := contracts/discover-pod/verify/run-verify-spec.test.sh
 LEVEL1         := contracts/discover-pod/level1/run-level1.sh
 LEVEL1_SELFTEST := contracts/discover-pod/level1/run-level1.test.sh
 LEVEL2_DIR     := contracts/discover-pod/level2
 
-.PHONY: help verify-spec level1 level1-selftest level2 test
+.PHONY: help verify-spec verify-spec-selftest level1 level1-selftest level2 test
 
 help:
 	@echo "Targets:"
 	@echo "  make verify-spec     Node acceptance verifier (spec vs SPEC.md)"
+	@echo "  make verify-spec-selftest  regression guard for verify-spec fidelity red-path (committed fixture)"
 	@echo "  make level1          oasdiff static diff (consumer vs PROVIDER_SPEC)"
 	@echo "  make level1-selftest regression guard for the level1 fail policy (committed fixtures)"
 	@echo "  make level2          schemathesis dynamic conformance (vs BACKEND_URL)"
@@ -44,6 +46,19 @@ help:
 # a clean checkout / in CI.
 verify-spec:
 	@cd $(VERIFY_DIR) && npm ci --silent && node verify-consumer-openapi.mjs
+
+# --- verify-spec-selftest (fidelity red-path regression guard, CCT-2026-0011) -
+# Drives verify-consumer-openapi.mjs DIRECTLY against a committed non-conforming
+# fixture (verify/testdata/missing-source-enum.yaml: a structurally-valid OpenAPI
+# 3.1 doc whose SourceParam.enum drops `both`) and asserts the gate is honest:
+# exit 1 AND the output names the C3-source-enum business assertion AND C0-parse/
+# C0-deref still PASS (proving the red is fidelity DRIFT, not corruption). This
+# guards against verify-spec rotting into a false green. Runs `npm ci` first so
+# it is self-contained on a clean checkout. NOTE: it targets the FIXTURE, not the
+# real spec — it must go RED-then-asserted-PASS, unlike `make verify-spec`.
+verify-spec-selftest:
+	@cd $(VERIFY_DIR) && npm ci --silent
+	@$(VERIFY_SELFTEST)
 
 # --- level1 (oasdiff Go binary) --------------------------------------------
 level1:

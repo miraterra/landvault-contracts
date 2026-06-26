@@ -13,7 +13,7 @@ Drift control (CCT-2026-0002, Option A): each OpenAPI element carries `x-req` + 
 | §3.1 | `GET /areal` | `getArealCatalogue` | REQ-META | Covered |
 | §3.0 | `GET /areal/regions` (PMTiles) | `getArealRegions` | REQ-META | Covered (binary, no envelope) |
 | §3.2/§3.3/§3.8 | `GET /areal/analytes/{analyteId}` | `getArealAnalyte` | REQ-AGG | Covered (source-resolved oneOf) |
-| §3.4 | `POST /areal/suitability` | `postArealSuitability` | REQ-RULE-RESULT | Covered |
+| §3.4 | `GET /areal/suitability` | `getArealSuitability` | REQ-RULE-RESULT | Covered |
 | §3.7 | `GET /areal/histograms/{analyteId}` | `getArealHistogram` | REQ-HIST | Covered |
 
 All five §3.0 resources are present.

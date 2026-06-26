@@ -31,12 +31,13 @@ and reports results. The tool choice (oasdiff, schemathesis) is encapsulated
 here; CI pipelines in the shell (SHELL-2026-0701) and the provider
 (DATA-2026-0068) invoke the runner — they do not own the test logic.
 
-| Target            | What it checks                                                  | Runtime         |
-|-------------------|-----------------------------------------------------------------|-----------------|
-| `make verify-spec`| The consumer spec faithfully encodes SPEC.md (spec-acceptance)  | Node            |
-| `make level1`     | Consumer spec vs PROVIDER spec (static diff — ADR-0066 level 1) | oasdiff Go binary |
-| `make level2`     | Consumer spec vs a running backend (dynamic — ADR-0066 level 2) | Python via `uv` |
-| `make test`       | All three, aggregated (see below)                               | all three       |
+| Target                 | What it checks                                                  | Runtime         |
+|------------------------|-----------------------------------------------------------------|-----------------|
+| `make verify-spec`     | The consumer spec faithfully encodes SPEC.md (spec-acceptance)  | Node            |
+| `make level1`          | Consumer spec vs PROVIDER spec (static diff — ADR-0066 level 1) | oasdiff Go binary |
+| `make level1-selftest` | Regression guard for the level1 fail policy (committed fixtures) | oasdiff Go binary |
+| `make level2`          | Consumer spec vs a running backend (dynamic — ADR-0066 level 2) | Python via `uv` |
+| `make test`            | All three, aggregated (see below)                               | all three       |
 
 The two levels are the ADR-0066 two-level model: **level 1** is the static
 spec-vs-spec diff; **level 2** is dynamic conformance against a live backend.
@@ -103,6 +104,54 @@ PROVIDER_SPEC=/tmp/provider-openapi.yaml make level1
 If `PROVIDER_SPEC` is unset or unreachable, `level1` does **not** exit 0 — it
 emits a SKIPPED / non-conformant banner and exits with a distinct sentinel
 (exit 3), so a missing provider spec is never mistaken for "the specs agree".
+
+### Level-1 fail policy: ERROR fails, WARN is report-only (ADR-0058)
+
+The point of the level-1 gate is to **block a non-conforming provider spec** —
+per **ADR-0058** it is an automated hard gate, never a silent pass. `level1`
+runs `oasdiff breaking --fail-on ERR`. The `--fail-on ERR` flag is load-bearing:
+`oasdiff breaking` exits 0 regardless of findings *unless* an explicit
+`--fail-on {ERR|WARN}` is given, so omitting it makes the gate a **false green**
+that passes even on ERROR-level breaking changes.
+
+The policy (decided, not configurable per-run):
+
+- **ERROR-level** breaking changes (e.g. a response body type change, a removed
+  consumer-required path) **FAIL the gate** — `level1` exits non-zero (exit 1).
+- **WARN-level** findings are **report-only**: they do **not** fail the gate, but
+  they are **printed loudly** in the breaking report. Rationale (ADR-0058):
+  additive provider changes within a major version are permitted, and oasdiff
+  WARN-class changes (e.g. removal of optional query parameters) are non-breaking
+  for the consumer; failing on WARN would block changes the policy allows.
+  Report-only is **not** a silent pass — WARN output is never suppressed by
+  severity filtering and never hidden behind `|| true`.
+- An oasdiff exit `>= 2` is a **tooling/usage error** (bad spec parse, bad flags),
+  reported as exit 2 — a different failure than red-on-break, never conflated
+  with "breaking changes found".
+
+The current WARN items (the `crop`/`scale`/`source`/`year` removals on
+`/areal/analytes` and `request` on `/areal/suitability`) are tracked separately
+as DATA-2026-0073 / DATA-2026-0074.
+
+### Level-1 fail-policy regression guard (`make level1-selftest`)
+
+`contracts/discover-pod/level1/run-level1.test.sh` is a committed, repeatable
+self-test that exercises the fail policy against three committed fixtures under
+`contracts/discover-pod/level1/testdata/`:
+
+| Fixture                      | Expectation                                                              |
+|------------------------------|--------------------------------------------------------------------------|
+| `conforming.yaml`            | exit 0 (PASS) — a derivative of the consumer spec; diffs clean.          |
+| `warn-only.yaml`             | exit 0 (PASS) **and** WARN findings surfaced — proves WARN prints loudly. |
+| `provider-main-0e44479.yaml` | exit 1 (FAIL) **and** the output names the GET `/areal/regions` break.   |
+
+The red-path assertion is **content-based**, not exit-code-only: an exit `!= 0`
+alone is not proof of red-on-break (a corrupt or empty spec also exits 1, parsed
+as `api-path-removed`), so the test asserts the run fails **and** its output
+names the specific `response-body-type-changed` break on `/areal/regions`. The
+breaking fixture is provider `main` pinned to commit `0e44479` of
+`mt-landvault-api` for determinism. The false green shipped precisely because
+nothing tested the failing path; this guard closes that gap.
 
 ### Expected level-2 failures (known V1 deviations)
 

@@ -683,7 +683,7 @@ components:
         op:
           type: string
           description: Comparison operator (SPEC §3.4 example uses ">=").
-          enum: [">="]
+          enum: [">=", "<=", "<", ">"]
         threshold:
           type: number
           description: >

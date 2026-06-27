@@ -637,6 +637,14 @@ components:
           description: Year to evaluate (SPEC §3.4).
         source:
           $ref: '#/components/schemas/SourceParam'
+        crop:
+          type: string
+          description: >
+            Benchmark crop id from the catalogue (SPEC §3.1). Required when any
+            clause has mode: "percent". The crop applies uniformly to all criteria
+            and determines which benchmark values to use for percent-mode comparisons.
+            The backend uses a 4-tier fallback: regional+crop, national+crop,
+            regional+OTHER, national+OTHER.
         criteria:
           type: array
           items:

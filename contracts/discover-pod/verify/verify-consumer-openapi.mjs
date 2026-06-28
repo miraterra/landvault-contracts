@@ -307,7 +307,7 @@ check('C8-rule-fields',
 // SuitabilityRequest is NOT a POST body — it is carried as a URL-encoded JSON
 // `request` query parameter. Assert both: (a) the GET operation declares a
 // `request` query param, and (b) the SuitabilityRequest schema shape is present
-// (criteria/clauses/weight/step) in components/schemas.
+// (criteria/clauses/weight/threshold) in components/schemas.
 {
   const op = findOp('GET', '/areal/suitability');
   let hasRequestQueryParam = false;
@@ -316,11 +316,11 @@ check('C8-rule-fields',
     hasRequestQueryParam = params.some((p) => p.name === 'request' && p.in === 'query');
   }
   const hasRequestShape =
-    /\bclauses\b/.test(docText) && /\bweight\b/.test(docText) && /\bstep\b/.test(docText);
+    /\bclauses\b/.test(docText) && /\bweight\b/.test(docText) && /\bthreshold\b/.test(docText);
   check('C8-rule-request-criteria',
     hasRequestQueryParam && hasRequestShape,
     '§3.4 suitability is GET with a URL-encoded `request` query param, and the ' +
-    'SuitabilityRequest shape (criteria/clauses/weight/step) is present ' +
+    'SuitabilityRequest shape (criteria/clauses/weight/threshold) is present ' +
     `(query-param: ${hasRequestQueryParam}, shape: ${hasRequestShape})`);
 }
 

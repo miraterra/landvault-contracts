@@ -21,7 +21,7 @@ openapi: 3.1.0
 
 info:
   title: Discover Pod — Areal Query API (consumer-required contract)
-  version: 0.2.0
+  version: 0.3.0
   description: >
     Consumer-required contract for the county-level data-layer (areal) map.
     Derived from the normative SPEC.md §3 (data model + endpoints) and §4
@@ -30,7 +30,7 @@ info:
     regionId. Geometry tiles never reload; switching analyte/year/scale/source
     re-fetches a small JSON payload and recolours.
   x-normative-source: landvault-shell/docs/data-layer-maps/SPEC.md
-  x-spec-version: 0.2.0-draft.2
+  x-spec-version: 0.3.0-draft.1
   x-governing-adrs: [ADR-0056, ADR-0057, ADR-0060, ADR-0062]
 
 servers:
@@ -343,14 +343,15 @@ components:
         filterSteps:
           type: array
           description: >
-            The only threshold values a user may pick when building criteria —
-            discrete by design (SPEC §3.1, §5.5 REQ-RULE-2; prevents reverse-
-            engineering hidden field values).
+            Suggested discrete threshold values for the UI when building criteria.
+            The frontend may use these to populate a dropdown or slider, but the
+            backend accepts any numeric threshold value. Discretization for privacy
+            (if needed) is handled server-side.
           items:
             type: number
         filterStepsUnit:
           type: string
-          description: Optional unit for filterSteps, e.g. "% of benchmark" (SPEC §3.1).
+          description: Optional unit label for filterSteps display, e.g. "% of benchmark".
         valueRange:
           $ref: '#/components/schemas/ValueRange'
 
@@ -625,8 +626,7 @@ components:
       description: >
         Criteria to evaluate per county (SPEC §3.4). Each criterion is an AND-
         combination of clauses (REQ-RULE-1); multi-criterion requests carry one entry
-        per rule with a weight (REQ-WT). step MUST be one of the analyte's filterSteps
-        (REQ-RULE-2, discrete by design).
+        per rule with a weight (REQ-WT).
       x-req: REQ-RULE-RESULT
       x-spec-section: "§3.4"
       required: [criteria]
@@ -637,6 +637,15 @@ components:
           description: Year to evaluate (SPEC §3.4).
         source:
           $ref: '#/components/schemas/SourceParam'
+        crop:
+          type: string
+          description: >
+            Crop identifier from the catalogue (GET /areal → crops[].id). This is
+            the crop name (e.g., "corn", "soybean"). Required when any clause has
+            mode: "percent". The crop applies uniformly to all criteria and determines
+            which benchmark values to use for percent-mode comparisons. The backend
+            resolves the name to a database UUID and uses a 4-tier fallback:
+            regional+crop, national+crop, regional+OTHER, national+OTHER.
         criteria:
           type: array
           items:
@@ -662,20 +671,33 @@ components:
     Clause:
       type: object
       description: >
-        One clause — analyte + op + discrete threshold (SPEC §3.4). step MUST be one
-        of that analyte's filterSteps (REQ-RULE-2).
+        One clause — analyte + op + threshold (SPEC §3.4). The threshold is the
+        comparison value for the specified analyte. When mode is "percent", the
+        threshold represents a percentage of the high_benchmark (0-300).
       x-req: REQ-RULE-RESULT
       x-spec-section: "§3.4"
-      required: [analyte, op, step]
+      required: [analyte, op, threshold]
       properties:
         analyte:
           type: string
         op:
           type: string
           description: Comparison operator (SPEC §3.4 example uses ">=").
-          enum: [">="]
-        step:
+          enum: [">=", "<=", "<", ">"]
+        threshold:
           type: number
+          description: >
+            The comparison value. When mode=absolute, this is compared directly
+            against the analyte value. When mode=percent, this represents a
+            percentage of the high_benchmark (0-300).
+        mode:
+          type: string
+          description: >
+            How to interpret the threshold. "absolute" compares against the raw
+            analyte value; "percent" compares against a percentage of the
+            high_benchmark. Defaults to "absolute" for backwards compatibility.
+          enum: [absolute, percent]
+          default: absolute
 
     SuitabilityEnvelope:
       description: Envelope whose data is the suitability response (SPEC §3.4).

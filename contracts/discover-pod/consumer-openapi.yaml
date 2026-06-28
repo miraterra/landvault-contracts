@@ -21,7 +21,7 @@ openapi: 3.1.0
 
 info:
   title: Discover Pod — Areal Query API (consumer-required contract)
-  version: 0.2.0
+  version: 0.3.0
   description: >
     Consumer-required contract for the county-level data-layer (areal) map.
     Derived from the normative SPEC.md §3 (data model + endpoints) and §4
@@ -30,7 +30,7 @@ info:
     regionId. Geometry tiles never reload; switching analyte/year/scale/source
     re-fetches a small JSON payload and recolours.
   x-normative-source: landvault-shell/docs/data-layer-maps/SPEC.md
-  x-spec-version: 0.2.0-draft.2
+  x-spec-version: 0.3.0-draft.1
   x-governing-adrs: [ADR-0056, ADR-0057, ADR-0060, ADR-0062]
 
 servers:

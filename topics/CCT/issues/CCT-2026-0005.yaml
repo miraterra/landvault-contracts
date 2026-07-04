@@ -1,0 +1,52 @@
+id: CCT-2026-0005
+date: '2026-06-22'
+status: resolved
+resolved_date: '2026-06-22'
+impact: high
+focus: contracts-repo-bootstrap
+facet: implementation
+classification: standard
+initiative: contract-conformance-testing
+
+title: >
+  Bootstrap the landvault-contracts repository
+
+description: >
+  landvault-contracts is the independent contract package (ADR-0057) — the
+  repo where consumer OpenAPI artifacts, REQ-tagged schemas, and the §8
+  coverage matrix live, owned and executed independently of both consumer
+  (landvault-shell) and provider (mt-landvault-api). It must exist before
+  SHELL-2026-0698 (consumer OpenAPI transcription) can be executed.
+
+  Create and bootstrap the repo so that contract authorship work can begin.
+
+notes: >
+  Mandatory pre-reads: ADR-0057 (independent contract package), ADR-0062
+  (shell is the integrator-steward that consumes artifacts from this repo).
+  Keep it minimal — the structure should accommodate the consumer OpenAPI
+  file, a coverage matrix, and CI configuration. Do not over-engineer.
+
+what_to_resolve: >
+  1. The landvault-contracts GitHub repo exists under the miraterra org.
+  2. CAGE methodology is installed (CLAUDE.md, agent roles wired to CCT prefix).
+  3. A minimal directory structure is in place for consumer OpenAPI artifacts.
+  4. The repo is referenced from the initiative brief and SHELL-2026-0698.
+
+affects:
+  - landvault-contracts/   # new repo
+
+dependencies: []
+
+tasks:
+  - id: t1
+    title: Create the landvault-contracts repo under the miraterra org
+    status: open
+    priority: must-have
+  - id: t2
+    title: Install CAGE methodology (CLAUDE.md with CCT prefix and agent roles)
+    status: open
+    priority: must-have
+  - id: t3
+    title: Add minimal directory structure for consumer OpenAPI artifacts
+    status: open
+    priority: must-have

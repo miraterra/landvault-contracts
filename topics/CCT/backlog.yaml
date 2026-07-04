@@ -1,0 +1,22 @@
+- id: CCT-2026-0001
+  rationale: 'Resolved 2026-06-22: decided contract-exchange/gating tooling — Option 3, git+CI. Contract artifacts in their own repos; CI diff is the gate.'
+- id: CCT-2026-0002
+  rationale: 'Resolved 2026-06-22: decided SPEC.md-to-consumer-OpenAPI derivation strategy — Option A, agent-generated with REQ-tag reconciliation and §8 coverage matrix.'
+- id: CCT-2026-0005
+  rationale: 'Resolved 2026-06-22: bootstrapped the landvault-contracts repo (CAGE methodology, CCT prefix, contracts/ scaffold).'
+- id: CCT-2026-0007
+  rationale: 'Resolved 2026-06-25: landvault-contracts made a self-contained test runner (verify-spec/level1/level2/test), PR #2. Unblocked SHELL-2026-0701.'
+- id: CCT-2026-0010
+  rationale: 'Resolved 2026-06-25: fixed Level-1 false-green — oasdiff now runs with --fail-on ERR + self-test guarding the failing path, PR #3.'
+- id: CCT-2026-0011
+  rationale: 'Resolved 2026-06-26: wired verify-spec into landvault-contracts'' own CI (repo''s first workflow), PR #4.'
+- id: CCT-2026-0006
+  rationale: 'Resolved (status per issue file — not reflected in landvault-management BACKLOG.yaml, which had no status/resolved fields for this entry): eliminate/approve the Python+PyYAML CI dependency from the oneOf spec patch.'
+- id: CCT-2026-0008
+  rationale: 'Resolved 2026-06-26: fixed stale suitability entry in coverage-matrix.md (POST -> GET), PR #5.'
+- id: CCT-2026-0009
+  rationale: 'Resolved 2026-06-25: swept contract-conformance-testing issues for stale affects/metadata paths — only SHELL-2026-0699 was stale, already corrected.'
+- id: CCT-2026-0003
+  rationale: 'Deferred — write the framework up as the reusable standard/template (post-acceptance, standardize phase). Not active work per 2026-06-26 CCT closure disposition.'
+- id: CCT-2026-0004
+  rationale: 'Deferred — document how provider-driven/negotiated boundaries slot into the framework (standardize phase, depends_on CCT-2026-0003). Not active work per 2026-06-26 CCT closure disposition.'

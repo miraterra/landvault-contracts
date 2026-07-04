@@ -1,0 +1,174 @@
+id: CCT-2026-0010
+date: '2026-06-25'
+status: resolved
+resolved_date: '2026-06-25'
+resolved_via: 'landvault-contracts PR #3 (main)'
+resolution_summary: >
+  Merged to landvault-contracts MAIN via PR #3. run-level1.sh now runs
+  `oasdiff breaking --fail-on ERR` (verified on main: 5 references); ERROR breaks
+  fail the gate, WARN is report-only-but-printed-loudly (ADR-0058). A committed
+  3-case self-test (make level1-selftest + fixtures conforming.yaml /
+  provider-main-0e44479.yaml / warn-only.yaml) guards the failing path — the same
+  class of missing test that let the false green ship in CCT-2026-0007. t4
+  (RED-on-break) reproduced LIVE, content-asserted on the regions break, not
+  deferred. The Level-1 gate is now honest end-to-end.
+impact: high
+focus: level-1-gate-correctness
+facet: implementation
+classification: standard
+initiative: contract-conformance-testing
+
+title: >
+  Level-1 gate is a FALSE GREEN — `make level1` does not fail on breaking changes
+  (oasdiff invoked without --fail-on)
+
+description: >
+  The whole purpose of the Level-1 gate is to BLOCK a non-conforming provider
+  spec (ADR-0058 hard gate, "never a silent pass"). It currently does not. The
+  runner reports PASS even when oasdiff finds ERROR-level breaking changes.
+
+  Root cause: landvault-contracts/contracts/discover-pod/level1/run-level1.sh
+  decides pass/fail purely from the exit code of `oasdiff breaking CONSUMER
+  PROVIDER` (line ~117). But `oasdiff breaking` WITHOUT a `--fail-on` flag exits
+  0 even when it reports breaking changes — the non-zero exit only happens when
+  `--fail-on ERR` (or WARN) is passed. So the gate's `if` always takes the
+  PASS branch unless oasdiff itself errors out.
+
+  Proven 2026-06-25: ran `make level1` with the consumer contract (contracts
+  main) against the PROVIDER main spec (mt-landvault-api #82,
+  mt-landvault-api/docs/openapi.yaml). oasdiff reported "7 changes: 2 error,
+  5 warning" — including two ERROR-level breaking changes on GET /areal/regions
+  (response body format changed from string/binary to string/"" for 200 and
+  206) — and the runner STILL printed "level1: PASS" and exited 0.
+
+  Independently corroborated by the shell PM session on PR #212 (2026-06-25),
+  two ways: (a) real provider spec → oasdiff reported "3 error" yet exit 0;
+  (b) deliberately removing a consumer-required PATH → oasdiff reported
+  "api-path-removed" yet exit 0. So the gate would not even catch a DELETED
+  endpoint. PR #212 is being held open (not merged) specifically because of this
+  defect — the wiring is correct, the enforcement is not real.
+
+  Consequence: the gate gives a false green on breaking provider changes. The
+  green observed on shell PR #212 was NOT a real verification. CORRECTION
+  (validator pass, 2026-06-25): the v3 branch spec is NOT conforming — diffed
+  against the consumer contract it produces 3 ERROR-level breaks (the regions
+  200/206 response-body-type change PLUS request-parameter-default-value-removed
+  on the analytes `source` param). So #212's green was 100% the false-green
+  defect, never a true pass. This has a direct consequence for verification:
+  once the gate is honest, re-running it as #212 invokes it (consumer contract
+  vs provider main) MUST go RED — a red result is the EXPECTED, correct outcome,
+  not a regression in this fix (see t4).
+
+notes: >
+  In scope of CCT-2026-0007 (the runner). The fix is small but the impact is the
+  gate's entire reason to exist. Once the gate is honest it will surface, as real
+  findings, the regions binary-format break (tracked on DATA-2026-0072) and the
+  dropped analytes query params crop/scale/source/year (tied to the absent typed
+  work in DATA-2026-0073/0074).
+
+  WARN POLICY — DECIDED (BE, 2026-06-25; do NOT leave to the Worker): the gate
+  fails on ERROR only (`oasdiff breaking --fail-on ERR`); WARN-level findings are
+  REPORT-ONLY. Rationale: ADR-0058's default permits additive changes within a
+  major version, and oasdiff WARN-class changes are non-breaking; failing on WARN
+  would block additive provider changes the policy allows. The current WARN items
+  (5 param removals: crop/scale/source/year on /areal/analytes and `request` on
+  /areal/suitability) are already tracked separately as DATA-2026-0073/0074.
+  CONSTRAINT: WARN findings must still be PRINTED LOUDLY in the level1 output
+  (do NOT suppress with severity filtering or hide under `|| true`) — report-only
+  must not become a new silent pass. Document this policy in the run-level1.sh
+  header and the README runner section, citing ADR-0058 as its source.
+
+  VALIDATOR AMENDMENTS (2026-06-25; Architect + Critic, confirmed by BE): the
+  one-line fix (t1) was reproduced correct, but the PROOF apparatus had four
+  blocking gaps — folded into the tasks below:
+    - No conforming spec exists for the green-path test; one must be committed
+      as a fixture (the consumer spec diffs clean against itself).
+    - The negative test must assert on CONTENT (the specific regions break), not
+      exit-code-only: a corrupt/empty provider spec also yields ERROR/exit 1
+      (parses as api-path-removed), so exit!=0 alone is a FALSE proof.
+    - The regression check must be COMMITTED and repeatable (a self-test + the
+      fixtures), not a one-off manual run — the false green shipped precisely
+      because nothing tested the failing path.
+    - t4 will go RED on #212; red is the pass condition, not a regression.
+
+what_to_resolve: >
+  1. `make level1` invokes oasdiff with an explicit fail policy
+     (`oasdiff breaking --fail-on ERR ...`) so ERROR-level breaking changes
+     produce a non-zero exit and FAIL the gate. Also correct the now-false inline
+     comment ("`breaking` exits non-zero when breaking changes exist") to state
+     the truth: `oasdiff breaking` exits 0 regardless of findings unless
+     `--fail-on {ERR|WARN}` is given.
+  2. Implement and document the DECIDED WARN policy: ERROR fails, WARN is
+     report-only and still printed loudly (see notes). Document in the
+     run-level1.sh header and README, citing ADR-0058.
+  3. A COMMITTED, repeatable regression self-test (not a one-off manual run):
+     a. Green path — level1 against a committed CONFORMING fixture exits 0.
+        The fixture is the consumer-required surface satisfied (minimally a
+        copy/derivative of consumer-openapi.yaml, which diffs clean against
+        itself). Commit it under contracts/discover-pod/level1/testdata/.
+     b. Red path — level1 against the breaking provider spec EXITS NON-ZERO,
+        and the assertion is CONTENT-BASED: the run must fail AND its output must
+        name the specific GET /areal/regions response-body-type break (grep the
+        oasdiff text, or use `--format json` and assert an ERR-level entry with
+        that change id). Exit!=0 alone is NOT acceptable — a corrupt/empty spec
+        also exits non-zero. Treat oasdiff tooling-error exits (>=2) as a DIFFERENT
+        failure that fails the test for the wrong reason, not as red-on-break.
+        Use a committed broken fixture and/or a provider-main snapshot pinned to
+        commit 0e44479 so the test is deterministic (provider main may move).
+  4. End-to-end confirmation: running the corrected gate as shell PR #212 invokes
+     it (consumer contract vs provider main) MUST go RED — capture the oasdiff
+     output showing >=1 ERROR and a non-zero exit. A RED result IS the pass
+     condition for this task (per the description correction); it is not a
+     regression. (No shell-repo write access is required — the gate runs from
+     this repo against the provider main spec.)
+
+affects:
+  - landvault-contracts/contracts/discover-pod/level1/run-level1.sh
+  - landvault-contracts/contracts/discover-pod/level1/testdata/   # committed conforming + breaking fixtures
+  - landvault-contracts/contracts/discover-pod/level1/run-level1.test.sh   # committed self-test (or a make level1-selftest target)
+  - landvault-contracts/README.md   # document the WARN policy (ERR fails / WARN report-only)
+
+dependencies:
+  - description: >
+      CCT-2026-0007 (the runner) — this is a correctness fix to its level1 step;
+      runner is merged on landvault-contracts main.
+
+tasks:
+  - id: t1
+    title: >
+      Add explicit oasdiff fail policy (`--fail-on ERR`) to run-level1.sh so ERROR breaks fail the
+      gate, AND correct the now-false inline comment (oasdiff `breaking` exits 0 regardless of
+      findings unless --fail-on is given).
+    status: resolved
+    priority: must-have
+    executed_by: worker
+    completed_at: '2026-06-26T00:16:13Z'
+  - id: t2
+    title: >
+      Implement and document the DECIDED WARN policy — ERROR fails, WARN report-only (still printed
+      loudly, not suppressed). Document in run-level1.sh header + README, citing ADR-0058.
+    status: resolved
+    priority: must-have
+    executed_by: worker
+    completed_at: '2026-06-26T00:16:13Z'
+  - id: t3
+    title: >
+      Commit a repeatable regression self-test (run-level1.test.sh or `make level1-selftest`) with two
+      committed fixtures under level1/testdata/: (a) a CONFORMING fixture (derived from the consumer
+      spec) → level1 exits 0; (b) a BREAKING fixture / provider-main snapshot pinned to 0e44479 →
+      level1 exits non-zero AND output names the GET /areal/regions response-body-type break
+      (content-based assertion, not exit-code-only). Treat oasdiff exit >=2 as a tooling error, not
+      red-on-break.
+    status: resolved
+    priority: must-have
+    executed_by: worker
+    completed_at: '2026-06-26T00:16:13Z'
+  - id: t4
+    title: >
+      End-to-end: run the corrected gate as shell PR #212 invokes it (consumer contract vs provider
+      main) and confirm it goes RED with >=1 ERROR + non-zero exit. RED is the expected pass condition,
+      not a regression. Capture the oasdiff output. No shell-repo write access required.
+    status: resolved
+    priority: must-have
+    executed_by: worker
+    completed_at: '2026-06-26T00:16:13Z'

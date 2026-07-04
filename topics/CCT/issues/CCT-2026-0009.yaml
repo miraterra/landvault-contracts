@@ -1,0 +1,64 @@
+id: CCT-2026-0009
+date: '2026-06-25'
+status: resolved
+resolved_date: '2026-06-25'
+resolution_summary: >
+  Sweep complete. Walked every initiative issue's affects: paths (CCT/SHELL/DATA/
+  LVGOV). The only genuinely stale path was SHELL-2026-0699's
+  (landvault-shell/docs/contracts/ — corrected at its resolution to
+  landvault-contracts). All others resolve to real locations: CCT-000x/0703 →
+  projects/contract-conformance-testing/ (exists); SHELL-0698 → contracts
+  consumer-openapi.yaml; SHELL-0702 → shell .github/workflows/; LVGOV-0007/0008 →
+  governance adr/. DATA issues use deliberately-coarse "mt-landvault-api/ # to be
+  confirmed" placeholders on not-yet-built work (valid, not stale); the nested
+  mt-landvault-api/mt-landvault-api/ paths match the repo's real structure.
+impact: low
+focus: issue-hygiene
+facet: process
+classification: mechanical-refactor
+initiative: contract-conformance-testing
+
+title: >
+  Sweep contract-conformance-testing issues for stale affects/metadata paths
+
+description: >
+  Several initiative issues were filed before the independent-contract-package
+  architecture (ADR-0057) settled, when the consumer OpenAPI was expected to live
+  in landvault-shell. Their affects: fields point at paths that never came to
+  exist (e.g. landvault-shell/docs/contracts/), because the OpenAPI actually
+  lives in landvault-contracts. SHELL-2026-0699 hit this directly — its affects
+  pointed at a nonexistent shell path; corrected at resolution time.
+
+  This is a hygiene sweep: walk the remaining open initiative issues and confirm
+  each affects: path (and other repo references) resolves to a real location
+  under the current architecture, correcting any that don't.
+
+notes: >
+  Low-impact, no production code. The value is preventing a dispatched Worker
+  from chasing a path that doesn't exist. SHELL-2026-0699's affects was already
+  corrected during its resolution; this sweep covers the rest.
+
+what_to_resolve: >
+  1. Every open contract-conformance-testing issue has affects: paths that
+     resolve to real locations (correct repo, correct subtree).
+  2. Corrections are made in place with a one-line note on why the original was
+     stale (architecture-shift artifact).
+
+affects:
+  - landvault-management/issues/   # initiative issue YAMLs (CCT/SHELL/DATA/LVGOV)
+
+dependencies: []
+
+tasks:
+  - id: t1
+    title: "Enumerate open initiative issues and list each affects: path"
+    status: resolved
+    priority: must-have
+  - id: t2
+    title: Verify each path exists under the current architecture; flag mismatches
+    status: resolved
+    priority: must-have
+  - id: t3
+    title: Correct stale paths in place with a brief architecture-shift note
+    status: resolved
+    priority: should-have

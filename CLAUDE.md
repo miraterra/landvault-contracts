@@ -9,13 +9,15 @@ independently of both consumer and provider, per ADR-0057.
 
 ---
 
-## Key Concepts
+## Issue tracking
 
-- Issues tracked in `~/git/landvault/landvault-management/issues/CCT-*.yaml`
-- BACKLOG: `~/git/landvault/landvault-management/issues/BACKLOG.yaml` (filter: `CCT` prefix)
-- Initiative brief: `~/git/landvault/landvault-management/projects/contract-conformance-testing/initiative-brief.yaml`
-- Normative source: `~/git/landvault/landvault-shell/docs/data-layer-maps/SPEC.md`
-- Governing ADRs: ADR-0056..0062 in `~/git/landvault/landvault-governance/`
+Issues live in-repo under `topics/CCT/issues/` (cage-issues format).
+The MCP server `cage-issues-mcp --root <this repo>` provides agent tooling
+(create_issue, update_issue, begin_transaction, commit_task, etc.).
+
+Initiative brief: `~/git/landvault/landvault-management/projects/contract-conformance-testing/initiative-brief.yaml`
+Normative source: `~/git/landvault/landvault-shell/docs/data-layer-maps/SPEC.md`
+Governing ADRs: ADR-0056..0062 in `~/git/landvault/landvault-governance/`
 
 ---
 
@@ -31,7 +33,7 @@ tool to read `~/git/landvault/landvault-cage/agents/coordinator/agent.md` and
 run the bootstrap orientation pass defined there, with these project-scoped
 overrides:
 - This is a **single-project coordinator**, not a portfolio coordinator.
-- Filter the BACKLOG to the project's issue prefix (`CCT`) only.
+- Backlog lives locally at `topics/CCT/backlog.yaml` (single-topic store via cage-issues-mcp) — no cross-project filtering needed.
 - Being on a feature branch is normal and expected.
 
 **Manager session** (on a track branch): When invoked with "Manage {ISSUE_ID}",

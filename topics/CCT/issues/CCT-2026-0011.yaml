@@ -1,0 +1,151 @@
+id: CCT-2026-0011
+date: '2026-06-25'
+status: resolved
+resolved_date: '2026-06-26'
+resolved_via: 'landvault-contracts PR #4 (merged to main)'
+resolution_summary: >
+  Merged to landvault-contracts main via PR #4. verify-spec.yml — the contract
+  package's first CI workflow — runs `make verify-spec` on PRs, with a committed
+  content-based red-path (verify-spec-selftest). The contract now self-verifies
+  against SPEC.md fidelity in CI. Third gate home complete.
+impact: medium
+focus: verify-spec-ci
+facet: implementation
+classification: standard
+initiative: contract-conformance-testing
+
+# COORDINATOR NOTE (2026-06-25): Implementation COMPLETE and verified locally
+# (verify-spec green 34/34; committed content-based red-path `make
+# verify-spec-selftest` trips C3-source-enum on a structurally-valid fixture with
+# one real fidelity defect — meets the CCT-2026-0010 standard). Tasks t1-t4 set
+# resolved by the worker. NOT merged — mid-cycle (working-demo passed → test
+# review → approval → PR → merge); lands via PR, no local merge. Top-level stays
+# OPEN until the PR merges (resolved != landed). This completes the THIRD gate
+# home: verify-spec → landvault-contracts' own CI. Scope held to verify-spec only
+# (level1 dropped — it's the shell's home and would make this CI flaky).
+
+title: >
+  Wire verify-spec into landvault-contracts' own CI (the third gate home)
+
+description: >
+  The settled wiring design (CCT-2026-0007) has three homes: verify-spec runs in
+  landvault-contracts' OWN CI, level1 in the shell (SHELL-2026-0701), level2 in
+  the provider (DATA-2026-0068). The runner exposes `make verify-spec` (the Node
+  acceptance verifier that proves consumer-openapi.yaml faithfully encodes
+  SPEC.md), but landvault-contracts has NO .github/workflows/ directory at all —
+  so nothing runs verify-spec automatically. The contract artifact can drift from
+  SPEC.md on a contract edit and no CI catches it.
+
+  Add a CI workflow in landvault-contracts that runs `make verify-spec` on PRs
+  that touch the contract or the runner, so the contract package self-verifies.
+  Scope: verify-spec ONLY. level1 is the shell's gate home (SHELL-2026-0701) and
+  needs a provider spec; do NOT add `make level1` to this workflow (the earlier
+  "ideally level1" framing is dropped per the validator pass — it would conflate
+  the fidelity self-check with the consumer<->provider boundary gate and make
+  this CI flaky for reasons unrelated to contract fidelity).
+
+notes: >
+  This is the contract-authoring self-check, a different class from the
+  consumer<->provider boundary gates (level1 in shell, level2 in provider) — it
+  guards the FIDELITY of the contract artifact to its normative source (SPEC.md),
+  not the provider's conformance.
+
+  SELF-CONTAINMENT (verified): `make verify-spec` runs the Node verifier
+  (contracts/discover-pod/verify/verify-consumer-openapi.mjs) which reads ONLY the
+  consumer OpenAPI in this repo — the SPEC.md requirements are baked into its
+  assertions at authoring time, NOT read at runtime. So the CI job needs only a
+  checkout of THIS repo + Node + `npm ci` (the verify/ package.json + lockfile are
+  committed). No running backend, no cross-repo checkout, no token.
+
+  SPEC.md BOUNDARY (do not overclaim): SPEC.md lives in landvault-shell, so a
+  SPEC.md change cannot trigger this workflow and is NOT auto-caught — fidelity is
+  enforced at assertion-authoring time (when the verifier's assertions are written
+  from SPEC.md), not by this CI run. State this in the README so the guarantee is
+  not overstated.
+
+  COMMITTED RED-PATH (per CCT-2026-0010's standard; VALIDATOR-CORRECTED 2026-06-25):
+  the verifier exits non-zero on bad input, but there is currently NO committed
+  verify-spec red-path test (only level1 has one). This issue must ADD one. Crucial
+  nuance from the validator pass: the verifier exits 1 on a CORRUPT/malformed file
+  too, so a trivial broken fixture (garbage YAML, or a bare version bump tripping a
+  parse/C0/C1 check) proves the gate goes red but NOT that it catches a real
+  fidelity drift. The fixture must be a STRUCTURALLY-VALID OpenAPI 3.1 doc with one
+  real SPEC-fidelity defect (e.g. drops a required REQ tag, or removes a required
+  enum value) that fails a business assertion (C2–C8), and the self-test must be
+  CONTENT-BASED — assert non-zero AND that the output names the specific failed
+  check — mirroring run-level1.test.sh. "Confirm against a broken spec" is NOT an
+  acceptable deliverable; the red-path must be committed and repeatable.
+
+  VALIDATOR AMENDMENTS (2026-06-25; Architect + Critic, confirmed by BE): two
+  blocking gaps (red-path was a non-committed "confirm"; the committed fixture +
+  selftest was a hidden task) folded into the tasks below, plus advisories (broad
+  trigger glob / no silent skip; pin Node; verify-spec-only scope; SPEC.md boundary).
+
+what_to_resolve: >
+  1. A CI workflow in landvault-contracts runs `make verify-spec` (verify-spec
+     ONLY — not level1). It must NOT be able to silently skip a contract edit:
+     use a BROAD path trigger (e.g. contracts/** and contracts/**/verify/** and
+     the Makefile and the workflow file itself), OR run unconditionally on every
+     PR (verify-spec is fast and hermetic — the safe default). Set up Node with a
+     PINNED major version and run `npm ci` against the committed lockfile.
+  2. The job fails the PR when verify-spec exits non-zero — no `|| true`, no
+     `continue-on-error`, no exit-code-swallowing wrapper.
+  3. A COMMITTED, repeatable red-path (per the CCT-2026-0010 standard; NOT a
+     one-off manual "confirm"): add a structurally-valid non-conforming fixture
+     under contracts/discover-pod/verify/testdata/ that carries one real
+     SPEC-fidelity defect (fails a business assertion C2–C8, not a parse/C0/C1
+     check), plus a `make verify-spec-selftest` target + self-test that asserts
+     verify-spec exits NON-ZERO and that the output NAMES the specific failed
+     check (content-based, mirroring run-level1.test.sh). Wire the self-test into
+     the CI job so the no-silent-pass guarantee is test-enforced.
+  4. Document in the README: the contract package self-verifies in CI; the new
+     verify-spec-selftest target (alongside the existing level1-selftest section);
+     and the SPEC.md boundary (a SPEC.md change in landvault-shell is not
+     auto-caught — fidelity is enforced at assertion-authoring time). Extend the
+     existing three-homes passage rather than adding a disjoint claim.
+
+affects:
+  - landvault-contracts/.github/workflows/   # new — verify-spec CI
+  - landvault-contracts/contracts/discover-pod/verify/testdata/   # new — committed non-conforming fixture
+  - landvault-contracts/contracts/discover-pod/verify/run-verify-spec.test.sh   # new — content-based red-path self-test (or equivalent)
+  - landvault-contracts/Makefile   # add the verify-spec-selftest target
+  - landvault-contracts/README.md   # document self-verify CI + selftest + SPEC.md boundary
+
+dependencies:
+  - description: >
+      CCT-2026-0007 (the runner exposing make verify-spec) — resolved, on main.
+
+tasks:
+  - id: t1
+    title: >
+      Add a landvault-contracts CI workflow running `make verify-spec` (verify-spec only). Broad path
+      trigger or unconditional (no silent skip); Node pinned + `npm ci` on the committed lockfile.
+    status: resolved
+    executed_by: worker
+    completed_at: '2026-06-25'
+    priority: must-have
+  - id: t2
+    title: >
+      Ensure the job fails the PR on non-zero exit — no `|| true` / `continue-on-error` / exit-swallowing.
+    status: resolved
+    executed_by: worker
+    completed_at: '2026-06-25'
+    priority: must-have
+  - id: t3
+    title: >
+      Add a COMMITTED content-based red-path: a structurally-valid non-conforming fixture under
+      verify/testdata/ with one real SPEC-fidelity defect (fails C2–C8, not parse), plus a
+      `make verify-spec-selftest` + self-test asserting non-zero AND naming the failed check
+      (mirroring run-level1.test.sh). Wire the self-test into CI. (Not a manual "confirm".)
+    status: resolved
+    executed_by: worker
+    completed_at: '2026-06-25'
+    priority: must-have
+  - id: t4
+    title: >
+      Document in the README: self-verify CI, the verify-spec-selftest target (next to level1-selftest),
+      and the SPEC.md-is-out-of-repo boundary. Extend the existing three-homes passage, do not fork it.
+    status: resolved
+    executed_by: worker
+    completed_at: '2026-06-25'
+    priority: should-have

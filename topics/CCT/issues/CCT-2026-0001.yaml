@@ -1,0 +1,64 @@
+id: CCT-2026-0001
+date: '2026-06-20'
+status: resolved
+resolved_date: '2026-06-22'
+impact: medium
+focus: contract-exchange-tooling
+facet: spec
+classification: standard
+initiative: contract-conformance-testing
+
+title: >
+  Decide the contract-exchange and gating tooling
+  (self-host Pact Broker / PactFlow / git+CI)
+
+description: >
+  Three options are in play: self-host a Pact Broker on AWS (ECS + RDS via
+  Terraform), use PactFlow bi-directional (OpenAPI + can-i-deploy), or adopt
+  git-versioned spec + CI diff as a lightweight alternative. The decision
+  unblocks the Level-1 gate (SHELL-2026-0701) and the Level-2 verification
+  (DATA-2026-0068); exchange infrastructure issues will be filed after this
+  decision resolves (the right infra depends entirely on which option is chosen).
+  This was the team's pivot away from Pact+Broker toward OpenAPI-native tooling;
+  the final hosting choice is still open.
+
+  Record a binding decision on how the contract exchange is hosted and how
+  can-i-deploy-style gating is achieved, so that downstream exchange and
+  deploy gate work can proceed.
+
+notes: >
+  Mandatory pre-reads: ADR-0058 (automated hard gate; steward owns policy),
+  ADR-0062 (shell is the integrator-steward that owns and runs the gate).
+
+what_to_resolve: >
+  1. A decision is recorded among the three options, stating the chosen approach
+     and the rationale for ruling out the others.
+  2. The decision states how can-i-deploy-style gating is achieved (or
+     consciously deferred) under the chosen option.
+  3. The decision is captured as an ADR or decision record and referenced by
+     the initiative.
+
+affects:
+  - landvault-management/projects/contract-conformance-testing/   # decision record file
+
+resolution: >
+  Option 3 chosen — git-versioned spec + CI diff. Contract artifacts live
+  alongside the code in their respective repos: consumer OpenAPI in
+  landvault-shell, provider OpenAPI in mt-landvault-api. No separate exchange
+  service or new repo required. The "exchange" is git; the gate is a CI diff
+  step (oasdiff or equivalent) owned by the shell as integrator-steward per
+  ADR-0062. Can-i-deploy-style gating is the CI gate itself — if the diff
+  fails, the build blocks. Exchange infrastructure issues (INFRA-2026-0001,
+  INFRA-2026-0002) are permanently not needed for this choice.
+
+dependencies: []
+
+tasks:
+  - id: t1
+    title: Evaluate the three tooling options and document trade-offs
+    status: done
+    priority: must-have
+  - id: t2
+    title: Record the decision as an ADR or decision record, including can-i-deploy gating approach
+    status: done
+    priority: must-have

@@ -1,0 +1,271 @@
+id: CCT-2026-0007
+date: '2026-06-25'
+status: resolved
+resolved_date: '2026-06-25'
+resolution_summary: >
+  Merged to landvault-contracts main via PR #2 (merge commit e146f0c). Three-level
+  self-contained runner: make verify-spec (Node acceptance verifier, brought current
+  with merged GET-suitability spec) / level1 (oasdiff, pinned, fails-not-silent on
+  missing PROVIDER_SPEC) / level2 (schemathesis via uv, --base-url override baked in,
+  committed expected-failures manifest for DATA-2026-0073/0074/0071) / test
+  (aggregating, no short-circuit). Verified on main. t4 (live level2 vs staging)
+  consciously deferred to DATA-2026-0068 — the STAGING_API_PASSWORD credential lives
+  in provider CI; the first real live run lands there. Unblocks SHELL-2026-0701.
+impact: high
+focus: test-runner
+facet: implementation
+classification: standard
+initiative: contract-conformance-testing
+
+title: >
+  Make landvault-contracts a self-contained test runner (Level-1 + Level-2)
+
+description: >
+  landvault-contracts currently holds the consumer-required OpenAPI as a
+  static artifact. It must also be a runnable test suite — one command,
+  given a backend URL and credentials, executes the verification levels and
+  reports results. The tool choice (schemathesis for Level-2, oasdiff for
+  Level-1) is an implementation detail encapsulated inside this repo. CI
+  pipelines in both the shell (SHELL-2026-0701) and the provider
+  (DATA-2026-0068) invoke the runner; they do not own the test logic.
+
+  This is the correct expression of ADR-0057 (independent contract package)
+  and ADR-0061 (authorship independence and execution independence are
+  orthogonal): the contract package is independently executable, not just
+  independently authored.
+
+  EXISTING ARTIFACT (discovered 2026-06-25): the repo already ships a Node.js
+  acceptance verifier at contracts/discover-pod/verify/verify-consumer-openapi.mjs
+  (built for SHELL-2026-0698, resolved). It is a THIRD, distinct check — it
+  proves the consumer spec faithfully encodes SPEC.md (spec-acceptance), which
+  is neither Level-1 (consumer-vs-provider spec diff) nor Level-2 (live
+  conformance). The runner must FOLD THIS IN as a first-class target, not
+  replace or duplicate it. Final target set is THREE levels:
+    make verify-spec  — Node acceptance verifier (existing; spec vs SPEC.md)
+    make level1       — oasdiff (consumer spec vs provider spec)
+    make level2       — schemathesis (consumer spec vs running backend)
+    make test         — runs all three in sequence
+
+  POLYGLOT TOOLCHAIN (deliberate): verify-spec is Node, level2 is Python
+  (schemathesis, via uv), level1 is the oasdiff Go binary (no runtime). There
+  is no single-language tool that covers all three well — schemathesis is the
+  right Level-2 tool and is Python-native. Do NOT rewrite the Node verifier in
+  Python or vice versa. The Makefile is the single unifying interface over the
+  three runtimes. (This polyglot footprint is the same class of concern as
+  CCT-2026-0006; acceptable here because each tool is best-in-class and the
+  binary/uv tools carry no persistent runtime.)
+
+  LEVEL-1 TIMING: oasdiff needs the PROVIDER spec (DATA-2026-0066), which lives
+  on branch data-2026-spec-conformance-v3 (PR #80), not main. Build `make
+  level1` now and exercise it against the v3-branch provider spec (fetch or
+  point PROVIDER_SPEC at it); it produces meaningful output for real only once
+  #80 merges. verify-spec and level2 are fully exercisable today.
+
+notes: >
+  Mandatory pre-reads: ADR-0057 (independent contract package), ADR-0061
+  (execution independence), ADR-0062 (shell is accountable for the Level-1
+  gate passing — that accountability is fulfilled by the shell's CI invoking
+  this runner, not by owning the test code), ADR-0066 (three-artifact /
+  two-level model — this is the ADR that actually defines level1 = static
+  spec diff and level2 = dynamic conformance; cite it where the levels are
+  documented). The runner must be invokable with: BACKEND_URL, BACKEND_AUTH
+  env vars. Level-1 does not require a running backend — it diffs two OpenAPI
+  documents. Level-2 requires a running backend. Both should be independently
+  invokable. Tool chain: uv for Python dependency management (available on
+  Darwin); oasdiff for Level-1 (single binary, no Python required).
+
+  ADRs 0056–0062 and 0066 are status:proposed; this work deliberately builds
+  on them ahead of ratification (tracked separately under LVGOV-2026-0008).
+  Do NOT gate on ratification. A later Auditor should not read building on
+  proposed ADRs here as a violation.
+
+  ADR framing correction (Auditor, advisory): the boundary under test is
+  mt-landvault-api as a BFF for the Discover Pod — a consumer-driven boundary.
+  ADR-0057's SCOPE excludes consumer-driven boundaries (BFFs), so do NOT frame
+  the runner in the README as a Platform-Steward / data-product contract.
+  What applies cleanly here is ADR-0061 (execution independence as a separate
+  axis) and ADR-0062 (the shell as integrator-steward runs the gate by
+  invoking this runner). Reserve ADR-0057 references for the package-shape
+  idea (one package, conformance-suite face), not for the boundary's
+  stewardship class.
+
+  RUNTIME FACTS (from the BE, pass to the Worker verbatim):
+  - Staging backend: https://landvault-api.staging.miraterrasoil.com
+    Basic Auth; password in the STAGING_API_PASSWORD secret.
+  - schemathesis base-URL trap: the consumer spec declares
+    servers:[{url:/api/landvault}] (the shell proxy prefix), but the backend
+    serves /areal/... at its ROOT. level2 MUST pass
+    --base-url https://landvault-api.staging.miraterrasoil.com so the
+    /areal/... paths resolve directly against the backend; otherwise every
+    request 404s and the 404s can be misread as the known V1 deviations.
+  - Level-1 provider spec (interim): point PROVIDER_SPEC at the provider
+    OpenAPI on branch data-2026-spec-conformance-v3 in mt-landvault-api
+    (docs/openapi.yaml on that branch). Re-point at provider main once
+    PR #80 merges. The runner WRITES nothing outside landvault-contracts —
+    the provider spec is read-only input.
+  - Expected Level-2 failures are NOT bugs: the V1 deviations in
+    DATA-2026-0073 / DATA-2026-0074 / DATA-2026-0071 are documented in
+    mt-landvault-api/docs/divergences/ (on the v3 branch). make level2 must
+    REPORT them, not fail the build over them.
+
+  VALIDATOR AMENDMENTS (2026-06-25; Architect/Auditor/Critic, confirmed by BE):
+  This issue was enriched after a validator pass surfaced four blocking gaps
+  (verifier currency, oasdiff provisioning, expected-failure discrimination,
+  base-URL override) plus advisories. The fixes are folded into the tasks and
+  what_to_resolve below. See tasks t0, t1, t2, t2a, t3, t4, t5.
+
+what_to_resolve: >
+  1. A Makefile (or equivalent) at the root of landvault-contracts exposes:
+       make verify-spec — Node acceptance verifier (wraps the existing
+                          contracts/discover-pod/verify/verify-consumer-openapi.mjs)
+       make level1      — static spec diff (oasdiff consumer vs provider)
+       make level2      — dynamic conformance (schemathesis against running backend)
+       make test        — runs all three levels, AGGREGATING results (collect
+                          each level's exit code, print a per-level summary,
+                          exit non-zero if any failed). Do NOT &&-short-circuit:
+                          an early-level failure must not hide later levels.
+                          Each level stays independently invokable.
+  2. Required env vars are documented with PER-LEVEL applicability:
+       BACKEND_URL       — level2 only (root URL of the running backend)
+       BACKEND_AUTH      — level2 only (Basic Auth; from STAGING_API_PASSWORD)
+       PROVIDER_SPEC     — level1 only (single canonical name; accepts EITHER
+                           a URL or a filesystem path — treat http(s):// as
+                           fetch, else path). verify-spec needs none.
+  3. oasdiff provisioning is explicit and deterministic: level1 checks for
+     oasdiff on PATH and, if absent, installs a PINNED version to a repo-local
+     bin via a documented install line. Name the version. Do not leave
+     acquisition to the Worker's discretion.
+  4. level1 never reports a silent pass when it had nothing to compare:
+     if PROVIDER_SPEC is unset or unreachable, level1 must FAIL or emit a
+     clearly-marked SKIPPED/non-conformant status with a distinct non-zero
+     or sentinel exit — never exit 0 as if "specs agree".
+  5. level2 distinguishes known deviations from real failures: an
+     expected-failures manifest (committed in this repo, keyed to
+     DATA-2026-0073 / DATA-2026-0074 / DATA-2026-0071, sourced from
+     mt-landvault-api/docs/divergences/) enumerates the known V1 deviations.
+     make level2 exits non-zero ONLY on UNEXPECTED failures; expected
+     deviations are reported, not build-failing.
+  6. The runner is tested locally against staging (see DATA-2026-0068 for
+     the CI wiring in the provider; SHELL-2026-0701 for the shell CI wiring).
+  7. A README section in landvault-contracts explains how to invoke it and
+     what each level checks, with a per-level env-var table, the three
+     runtimes (Node / oasdiff Go binary / Python-via-uv), the interim
+     v3-branch provider-spec source, and a "current status" note mapping each
+     level to its readiness (verify-spec green today; level2 green today;
+     level1 fully green only when PR #80 merges). Cite ADR-0066 where the
+     levels are explained; frame independent execution via ADR-0061/0062.
+
+affects:
+  - landvault-contracts/   # Makefile, pyproject.toml or uv config, README, repo-local bin/ for pinned oasdiff
+  - contracts/discover-pod/verify/   # add package.json + lockfile so verify-spec Node deps are reproducible
+  - contracts/discover-pod/verify/verify-consumer-openapi.mjs   # bring assertions current with merged GET-suitability spec
+
+dependencies:
+  - description: >
+      SHELL-2026-0698 (consumer OpenAPI) must exist — it is the input to
+      both levels. Already resolved.
+  - description: >
+      DATA-2026-0066 (provider OpenAPI 3.1) should be merged before Level-1
+      can produce meaningful diff output.
+
+tasks:
+  - id: t0
+    title: >
+      Wrap the existing Node verifier as `make verify-spec` AND bring it current with the merged spec.
+      "No rewrite" means do NOT port it to another language or re-architect it — it does NOT mean leave
+      stale assertions. Update verify-consumer-openapi.mjs: suitability is now GET (not POST) per
+      DATA-2026-0071 (merged PR #1) — fix the method assertion (was POST /areal/suitability) and the
+      request-shape assertion (request is now a URL-encoded query param, not a POST body). Add a
+      checked-in package.json + lockfile under contracts/discover-pod/verify/ (deps: js-yaml,
+      @apidevtools/swagger-parser); the target runs npm ci (or the documented npm install --no-save)
+      before invoking node, so verify-spec is reproducible on a clean checkout / in CI.
+    status: resolved
+    executed_by: code-author-cct-2026-0007
+    completed_at: '2026-06-25T16:16:15Z'
+    priority: must-have
+  - id: t1
+    title: >
+      Add oasdiff as `make level1` — diff consumer spec vs PROVIDER_SPEC (single env name; accepts a URL
+      or a path). Provision oasdiff explicitly: target checks PATH and, if absent, installs a PINNED
+      version to a repo-local bin via a documented install line (name the version — do not leave to the
+      Worker). Point PROVIDER_SPEC at the provider OpenAPI on branch data-2026-spec-conformance-v3
+      (docs/openapi.yaml) until PR #80 merges. If PROVIDER_SPEC is unset/unreachable, level1 must FAIL or
+      emit a distinct SKIPPED/non-conformant status — never a silent exit 0.
+    status: resolved
+    executed_by: code-author-cct-2026-0007
+    completed_at: '2026-06-25T16:16:15Z'
+    priority: must-have
+  - id: t2
+    title: >
+      Add schemathesis as `make level2` (uv-managed Python) — run consumer spec against the backend.
+      MUST pass --base-url https://landvault-api.staging.miraterrasoil.com (BACKEND_URL root): the
+      consumer spec's servers url is the shell proxy prefix /api/landvault, but the backend serves
+      /areal/... at root. Inject BACKEND_AUTH as Basic Auth (STAGING_API_PASSWORD). Without the base-URL
+      override every request 404s.
+    status: resolved
+    executed_by: code-author-cct-2026-0007
+    completed_at: '2026-06-25T16:16:15Z'
+    priority: must-have
+  - id: t2a
+    title: >
+      Expected-failure handling for level2 — add a committed expected-failures manifest keyed to the
+      known V1 deviations (DATA-2026-0073 / DATA-2026-0074 / DATA-2026-0071, sourced from
+      mt-landvault-api/docs/divergences/ on the v3 branch). make level2 exits non-zero ONLY on
+      UNEXPECTED failures; expected deviations are reported, not build-failing.
+    status: resolved
+    executed_by: code-author-cct-2026-0007
+    completed_at: '2026-06-25T16:16:15Z'
+    priority: must-have
+  - id: t3
+    title: >
+      Add `make test` that AGGREGATES all three levels — collect each level's exit code, print a
+      per-level summary, exit non-zero if any failed. Do NOT &&-short-circuit (each level stays
+      independently invokable). Document required env vars with per-level applicability.
+    status: resolved
+    executed_by: code-author-cct-2026-0007
+    completed_at: '2026-06-25T16:16:15Z'
+    priority: must-have
+  - id: t4
+    title: >
+      Verify locally against staging. Definition of done (observable, partial-state-aware):
+      make verify-spec exits 0; make level2 runs to completion and its only failures match the
+      expected-failures manifest (t2a); make level1 executes against the pinned v3 provider spec and
+      emits a diff (full-green deferred to PR #80).
+    status: deferred
+    executed_by: code-author-cct-2026-0007
+    completed_at: ''
+    note: "verify-spec + level1 exercised end-to-end; live level2 NOT run (STAGING_API_PASSWORD absent in build env). level2 wiring validated offline (smoke run + manifest unit-check). Live-staging assertion carried to DATA-2026-0068, where the secret lives. Not blocking resolution."
+    priority: must-have
+  - id: t5
+    title: >
+      Add README section — invocation, per-level env-var table (var | required-by-level | format/example),
+      the three runtimes (Node / oasdiff Go binary / Python-via-uv), the interim v3-branch provider-spec
+      source, and a "current status" note (verify-spec + level2 green today; level1 fully green only when
+      PR #80 merges). Cite ADR-0066 where the levels are explained; frame independent execution via
+      ADR-0061/0062 (BFF, shell as integrator-steward), not as an ADR-0057 data-product contract. Extend
+      the repo README's governing-docs reference to include ADR-0066.
+    status: resolved
+    executed_by: code-author-cct-2026-0007
+    completed_at: '2026-06-25T16:16:15Z'
+    priority: should-have
+
+deviations:
+  - spec: >
+      what_to_resolve 6 / task t4: "The runner is tested locally against staging."
+      t4 DoD: "make level2 runs to completion and its only failures match the
+      expected-failures manifest."
+    actual: >
+      verify-spec (exit 0) and level1 (real diff against the v3-branch provider
+      spec, breaking-change gate PASS) were exercised end-to-end. level2 was NOT
+      run against live staging: the STAGING_API_PASSWORD secret is not present in
+      the Code Author's environment. level2 wiring was instead validated two ways:
+      (a) a smoke run against an unreachable backend confirms it launches
+      schemathesis with the --base-url override + Basic auth header and FAILS
+      non-zero (no silent pass); (b) the manifest classifier was unit-checked
+      against synthetic NDJSON confirming known-deviation paths are reported and
+      an out-of-manifest server-error is build-failing.
+    rationale: >
+      The blocker is environmental (an unavailable credential), not an
+      implementation gap. The runner is complete and correct; the live-staging
+      assertion in t4 must be completed by the Manager/Tester once
+      STAGING_API_PASSWORD is available. t4 left at in-progress to flag this.

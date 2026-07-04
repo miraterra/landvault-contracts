@@ -1,0 +1,87 @@
+id: CCT-2026-0003
+date: '2026-06-20'
+status: deferred
+deferred_date: '2026-06-26'
+closure_note: "Deferred at CCT initiative closure (2026-06-26) — Standardize-phase documentation follow-on (reusable standard write-up). Optional, not blocking. Captures the four-surfaces pattern + red-path standard recorded in this issue."
+impact: medium
+focus: framework-standard
+facet: spec
+classification: standard
+initiative: contract-conformance-testing
+
+title: >
+  Write the contract-conformance framework up as the reusable standard and template
+
+description: >
+  The initiative's SC2 requires the framework to be documented and standardised
+  as a reusable template. This document is written AFTER acceptance is complete
+  (not before) so it reflects the proven pattern, not the design intent. It is
+  the canonical reference for teams onboarding new boundaries to contract testing.
+
+  Produce a standard document that captures the validated contract-conformance
+  pattern as the template later boundaries (other pod-BFF pairs, data products,
+  peer integrations) follow, grounded in what was actually proven in the
+  acceptance issue (SHELL-2026-0703).
+
+notes: >
+  Mandatory pre-reads: ADR-0056 through ADR-0062 and the bi-directional
+  amendment (the governing ADRs the framework operationalises). Must be
+  written after SHELL-2026-0703 (acceptance proof) is confirmed — not based
+  on design intent alone.
+
+  STANDARD TO CAPTURE (hard-won 2026-06-25): EVERY conformance gate must ship a
+  COMMITTED red-path test — a test that proves the gate FAILS on a known-bad
+  input. Both gates in this initiative shipped false greens precisely because
+  nothing exercised their failing path: CCT-2026-0007's Level-1 passed on
+  breaking diffs (oasdiff missing --fail-on; fixed in CCT-2026-0010 with a
+  committed self-test + fixtures), and the Level-2 design needed an
+  expected-failures manifest to distinguish real failures from known deviations.
+  The template must mandate: a gate is not "done" until its red path is tested
+  and committed (a green-only test is how false assurance ships). Also capture
+  the WARN policy precedent (ERR fails / WARN report-only-but-loud, per ADR-0058).
+
+  FOUR VERIFICATION SURFACES to enumerate in the standard (this initiative proved
+  all four belong in the pattern):
+    1. Consumer-side contract test — consumer code vs an EPHEMERAL contract mock
+       in CI (SHELL-2026-0726). Tests that the consumer consumes the contract;
+       mock is CI-test-only, never a standing/dev server. Replaces the provider
+       per ADR-0056.
+    2. verify-spec — contract vs SPEC.md fidelity, in the contract package's CI
+       (CCT-2026-0011).
+    3. Level-1 — consumer spec vs provider spec static diff, in the integrator/
+       consumer CI (SHELL-2026-0701, ADR-0062).
+    4. Level-2 — live provider conformance, in the provider CI post-deploy
+       (provider GitHub issue: miraterra/mt-landvault-api#86).
+  Each gates what its side is positioned to gate; the template must show all four
+  and where each runs.
+
+what_to_resolve: >
+  1. A standard document captures the full validated pattern: SPEC.md (normative
+     source) → consumer OpenAPI (derived) → Level-1 static diff gate → Level-2
+     dynamic conformance → exchange + can-i-deploy gate, run by the integrator
+     per ADR-0062.
+  2. The document reflects what was actually built and proven in acceptance,
+     noting any deviations from the pre-build design.
+  3. It is structured as a template that other boundaries can follow.
+
+affects:
+  - landvault-management/projects/contract-conformance-testing/   # framework standard document
+
+dependencies:
+  - description: >
+      Requires SHELL-2026-0703 (acceptance proof) to be resolved — the write-up
+      must reflect what was actually proven, not the pre-build design.
+
+tasks:
+  - id: t1
+    title: Draft the framework standard covering the full validated pattern
+    status: open
+    priority: must-have
+  - id: t2
+    title: Confirm the document reflects the proven pattern vs any deviations from pre-build design
+    status: open
+    priority: must-have
+  - id: t3
+    title: Structure the document as a reusable template for other boundaries
+    status: open
+    priority: must-have

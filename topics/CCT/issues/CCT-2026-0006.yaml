@@ -1,0 +1,84 @@
+id: CCT-2026-0006
+date: '2026-06-23'
+status: resolved
+resolved_date: '2026-06-25'
+resolved_via: 'mt-landvault-api PR #82 (main)'
+resolution_summary: >
+  Resolved via Option B (native generation) on mt-landvault-api MAIN, PR #82: no
+  Python anywhere in the repo; scripts/generate-swagger.sh uses swag v2 emitting
+  OpenAPI 3.1 natively, no post-processing patch. INCIDENTAL CAVEAT: the oneOf the
+  Python patch targeted is also absent because DATA-2026-0074 (typed county-record
+  union) was dropped from #82 — so native oneOf generation has NOT actually been
+  exercised. If/when 0074 is implemented (gate-driven), re-confirm swag v2 can emit
+  the oneOf natively; if not, this concern resurfaces.
+impact: medium
+focus: ci-toolchain
+facet: implementation
+classification: standard
+initiative: contract-conformance-testing
+
+title: >
+  Eliminate or approve the Python+PyYAML CI dependency introduced by the
+  oneOf spec patch (DATA-2026-0074)
+
+description: >
+  The v3 conformance branch (data-2026-spec-conformance-v3) introduced a
+  Python+PyYAML build step to post-process the generated OpenAPI spec and
+  inject the oneOf union for the typed CountyRecord response (DATA-2026-0074).
+  This adds a non-Go runtime dependency to the mt-landvault-api CI pipeline.
+
+  The patch exists because the Go OpenAPI generator used by the provider
+  (likely swag or a similar annotation-based tool) cannot express a oneOf
+  union natively from Go structs. The Python script patches the generated
+  YAML after the fact.
+
+  This approach is fragile: it depends on Python+PyYAML being available in
+  CI, it runs after generation (so the patch can silently drift from the
+  schema it targets), and it is a maintenance burden for future annotators
+  who may not know the patch exists.
+
+  Two resolution paths:
+  A. Approve and document the dependency — add Python+PyYAML to the CI
+     environment specification and test the patch step in CI.
+  B. Replace with a native approach — switch to a Go OpenAPI generator or
+     annotation library that supports oneOf natively, eliminating the patch.
+
+notes: >
+  Option B is the preferred long-term direction. The patch was the pragmatic
+  V1 choice during the session-2 spike; it should not become a permanent
+  fixture. Evaluate whether swag/v2 (GitHub issue #74, filed during session-1)
+  or an alternative generator can emit oneOf from Go interfaces or wrapper
+  types. If so, removing the Python step should be straightforward.
+
+what_to_resolve: >
+  1. A decision is recorded: approve+document (Option A) or replace (Option B).
+  2. If Option A: Python+PyYAML is added to the CI environment spec and the
+     patch step is tested as part of CI (not just local builds).
+  3. If Option B: the Python patch step is replaced with a native Go oneOf
+     annotation approach; the spec generates correctly without post-processing.
+
+affects:
+  - mt-landvault-api/   # CI configuration and OpenAPI generation pipeline
+
+dependencies:
+  - description: >
+      data-2026-spec-conformance-v3 PR must be merged before the CI dependency
+      change can be made — the patch and its context need to be on main first.
+
+tasks:
+  - id: t1
+    title: Evaluate native Go oneOf options (swag/v2, kin-openapi, or direct YAML authoring)
+    status: open
+    priority: must-have
+  - id: t2
+    title: Record the decision (Option A or B) and proceed with the chosen path
+    status: open
+    priority: must-have
+  - id: t3
+    title: Update CI environment spec (Option A) or replace the patch step (Option B)
+    status: open
+    priority: must-have
+  - id: t4
+    title: Confirm `go test ./...` and spec generation pass cleanly in CI after the change
+    status: open
+    priority: must-have

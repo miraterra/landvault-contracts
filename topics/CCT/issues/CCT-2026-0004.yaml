@@ -1,0 +1,62 @@
+id: CCT-2026-0004
+date: '2026-06-20'
+status: deferred
+deferred_date: '2026-06-26'
+closure_note: "Deferred at CCT initiative closure (2026-06-26) — Standardize-phase documentation follow-on (provider-driven/negotiated boundary addendum). Optional, not blocking."
+impact: low
+focus: data-product-boundary-guidance
+facet: spec
+classification: standard
+initiative: contract-conformance-testing
+
+title: >
+  Document how provider-driven (data-product) and negotiated boundaries
+  slot into the contract-conformance framework
+
+description: >
+  The initiative's proving ground is the consumer-driven BFF case (Discover Pod
+  vs mt-landvault-api). The framework also applies to provider-driven boundaries
+  (mt-data-* data products) and negotiated boundaries (peer integrations), but
+  with different ownership and authority patterns per ADR-0060 and ADR-0062.
+  SC2 requires the framework standard to cover the full picture. This addendum
+  is explicitly not an implementation — it is guidance for the next boundaries.
+
+  Produce a short addendum to the framework standard (CCT-2026-0003) that maps
+  the framework onto the provider-driven and negotiated boundary cases, giving
+  teams a starting point without requiring them to derive it from first principles.
+
+notes: >
+  Mandatory pre-reads: ADR-0060 (contract directionality — consumer-driven,
+  negotiated, provider-driven), ADR-0062 (stewardship scopes — Platform Steward
+  governs cross-team contracts; integrator/shell governs pod-side contracts).
+  Related: PROP-2026-015 (data services and products — the provider-driven side).
+
+what_to_resolve: >
+  1. A short addendum maps the framework onto the provider-driven case per
+     ADR-0060 and ADR-0062, noting how authority and contract ownership differ
+     from the consumer-driven BFF case.
+  2. A short addendum maps the framework onto the negotiated case per
+     ADR-0060 and ADR-0062, noting the joint-ownership model.
+  3. The addendum is attached to or incorporated into the framework standard.
+
+affects:
+  - landvault-management/projects/contract-conformance-testing/   # addendum to framework standard
+
+dependencies:
+  - description: >
+      Requires CCT-2026-0003 (framework standard document) to exist — this is
+      an addendum to that document, not a standalone document.
+
+tasks:
+  - id: t1
+    title: Write addendum mapping provider-driven (data-product) boundaries per ADR-0060/0062
+    status: open
+    priority: must-have
+  - id: t2
+    title: Write addendum mapping negotiated boundaries per ADR-0060/0062
+    status: open
+    priority: must-have
+  - id: t3
+    title: Attach addendum to or incorporate it into the framework standard (CCT-2026-0003)
+    status: open
+    priority: must-have

@@ -1,0 +1,56 @@
+id: CCT-2026-0002
+date: '2026-06-20'
+status: resolved
+resolved_date: '2026-06-22'
+impact: medium
+focus: consumer-openapi-derivation
+facet: spec
+classification: standard
+initiative: contract-conformance-testing
+
+title: >
+  Decide the SPEC.md to consumer-OpenAPI derivation strategy
+  (hand-author with REQ-tag reconciliation vs semi-structured + generate)
+
+description: >
+  SPEC.md (landvault-shell/docs/data-layer-maps/SPEC.md) is the normative human
+  source of truth for the Discover Pod ↔ mt-landvault-api contract. The
+  consumer-required OpenAPI is derived from it. Two approaches are in play:
+  hand-author the OpenAPI and reconcile via REQ tags and the SPEC.md §8 coverage
+  matrix; or make SPEC.md semi-structured and generate the OpenAPI from it. The
+  chosen approach governs how SHELL-2026-0698 (consumer OpenAPI transcription)
+  proceeds and how drift is detected over time.
+
+notes: >
+  Mandatory pre-reads: ADR-0057 (independent contract package, to be amended
+  by LVGOV-2026-0007), the bi-directional amendment ADR (once written).
+  The reference contract is at landvault-shell/docs/data-layer-maps/SPEC.md.
+
+what_to_resolve: >
+  1. A decision is recorded between hand-authoring with REQ-tag reconciliation
+     versus semi-structured SPEC.md with generation.
+  2. The drift-control mechanism — how SPEC.md and the consumer OpenAPI are
+     kept in sync over time — is named and described.
+
+affects:
+  - landvault-management/projects/contract-conformance-testing/   # decision record file
+
+resolution: >
+  Option A — agent-generated from SPEC.md, maintained with REQ-tag
+  reconciliation. An agent reads SPEC.md and produces the consumer OpenAPI 3.1
+  (SHELL-2026-0698). Future SPEC.md changes are surfaced by REQ-* tag drift and
+  the §8 coverage matrix; the OpenAPI is updated by re-running the same
+  agent-translation step. Semi-structured generation deferred until the team
+  size or change cadence justifies it.
+
+dependencies: []
+
+tasks:
+  - id: t1
+    title: Evaluate hand-authoring vs semi-structured generation approaches and document trade-offs
+    status: done
+    priority: must-have
+  - id: t2
+    title: Record the decision with the drift-control mechanism named
+    status: done
+    priority: must-have

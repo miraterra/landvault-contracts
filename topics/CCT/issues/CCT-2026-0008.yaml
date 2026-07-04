@@ -1,0 +1,55 @@
+id: CCT-2026-0008
+date: '2026-06-25'
+status: resolved
+resolved_date: '2026-06-26'
+resolved_via: 'landvault-contracts PR #5 (merged to main)'
+resolution_summary: >
+  Merged via PR #5. coverage-matrix.md suitability entry corrected POST -> GET to
+  match the consumer OpenAPI. Doc-only.
+impact: low
+focus: contract-docs
+facet: documentation
+classification: mechanical-refactor
+initiative: contract-conformance-testing
+
+title: >
+  Fix stale suitability entry in landvault-contracts coverage-matrix.md (POST -> GET)
+
+description: >
+  The consumer contract's coverage matrix still describes the suitability
+  endpoint as POST / postArealSuitability. The endpoint was corrected to GET /
+  getArealSuitability when the consumer OpenAPI landed (DATA-2026-0071, merged
+  landvault-contracts PR #1), and the OpenAPI itself is now GET. The
+  coverage-matrix.md doc was not updated in lockstep, so it now contradicts the
+  spec it documents.
+
+  Surfaced as a follow-up by the SHELL-2026-0699 reconciliation session.
+
+notes: >
+  Pure doc fix in landvault-contracts. No code or OpenAPI change — the OpenAPI is
+  already correct; only the human-readable matrix is stale.
+
+what_to_resolve: >
+  1. contracts/discover-pod/coverage-matrix.md describes suitability as
+     GET / getArealSuitability, matching consumer-openapi.yaml.
+  2. A scan confirms no other POST/getArealSuitability mismatch remains in the
+     matrix or surrounding docs.
+
+affects:
+  - landvault-contracts/contracts/discover-pod/coverage-matrix.md
+
+dependencies: []
+
+tasks:
+  - id: t1
+    title: Update the suitability row in coverage-matrix.md from POST/postArealSuitability to GET/getArealSuitability
+    status: resolved
+    priority: must-have
+    executed_by: worker
+    completed_at: '2026-06-25'
+  - id: t2
+    title: Scan the matrix and adjacent docs for any other stale POST-suitability references
+    status: resolved
+    priority: should-have
+    executed_by: worker
+    completed_at: '2026-06-25'

@@ -1,8 +1,24 @@
 id: CCT-2026-0004
 date: '2026-06-20'
-status: deferred
+status: cancelled
 deferred_date: '2026-06-26'
 closure_note: "Deferred at CCT initiative closure (2026-06-26) — Standardize-phase documentation follow-on (provider-driven/negotiated boundary addendum). Optional, not blocking."
+cancelled_date: '2026-07-07'
+superseded_by: CCT-2026-0012
+cancellation_note: >
+  Cancelled per the mt-landvault-api BFF-extraction initiative (2026-07-07):
+  mt-landvault-temp is the first real provider-driven boundary since
+  ADR-0060/0062 were written, and David chose to use it as the worked
+  example now rather than wait. This issue's scope as filed is structurally
+  wrong for that: it is a hard-dependent addendum to CCT-2026-0003 (which
+  itself cannot proceed — its own stated precondition, SHELL-2026-0703
+  acceptance-proof confirmation, is unresolved, blocked on SHELL-2026-0702),
+  and it bundles the negotiated-boundary case, for which no real example
+  exists yet. Superseded by CCT-2026-0012: a standalone provider-driven
+  addendum, decoupled from CCT-2026-0003, scoped to the case we can
+  actually ground in a real boundary. The negotiated-boundary mapping
+  (this issue's t2) is dropped, not carried forward — revisit when a real
+  negotiated boundary appears.
 impact: low
 focus: data-product-boundary-guidance
 facet: spec

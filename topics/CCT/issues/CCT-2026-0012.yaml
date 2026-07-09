@@ -1,0 +1,96 @@
+id: CCT-2026-0012
+date: '2026-07-07'
+status: open
+
+impact: medium
+impact_note: >
+  Sets the precedent every future mt-data-* data-product boundary follows.
+  Concretely unblocks a two-year-old design gap (ADR-0060/0062 exist but
+  no provider-driven boundary had ever put them into practice) using a
+  real boundary instead of a hypothetical one.
+
+focus: provider-driven-boundary
+facet: spec
+classification: standard
+initiative: contract-conformance-testing
+
+title: >
+  Write a standalone provider-driven contract addendum, using
+  mt-landvault-temp as the worked example
+
+description: >
+  Supersedes CCT-2026-0004 (cancelled 2026-07-07). CCT-2026-0004 bundled
+  two things this issue separates: (1) it was a hard-dependent addendum to
+  CCT-2026-0003, the full framework standard, which cannot be written yet
+  because its own precondition (SHELL-2026-0703 acceptance-proof
+  confirmation) is unresolved; (2) it tried to cover both provider-driven
+  and negotiated boundaries when only a provider-driven example actually
+  exists.
+
+  This issue is scoped to what can honestly be written now: a standalone
+  document mapping ADR-0060 (contract directionality) and ADR-0062
+  (stewardship scopes) onto a concrete provider-driven boundary —
+  mt-landvault-temp (the interim data-owning project being extracted from
+  mt-landvault-api per plan-2026-0001) supplying data to mt-landvault-api.
+  Per ADR-0060's classification test, this is provider-driven: mt-data-*
+  products serve many/unknown cross-team consumers, so the provider holds
+  final authority and authors the interface; mt-landvault-api conforms as
+  consumer. The addendum records this as it is actually built — not as
+  design intent — so it can be folded into CCT-2026-0003 once that
+  document exists, instead of being re-derived from scratch.
+
+notes: >
+  Mandatory pre-reads: ADR-0060, ADR-0062. Companion issue: CCT-2026-0013
+  (the actual technical work of publishing mt-landvault-temp's contract in
+  this repo) — this issue documents the pattern that work follows, it does
+  not perform the work itself (context caging: facet: spec does not
+  prescribe the implementation in CCT-2026-0013).
+
+  The negotiated-boundary mapping from CCT-2026-0004's t2 is explicitly
+  NOT carried forward here — no real negotiated boundary exists yet to
+  ground it honestly. Revisit as a separate issue when one appears.
+
+what_to_resolve: >
+  1. A short standalone document (living in this repo, e.g.
+     contracts/provider-driven-boundaries.md or equivalent) maps ADR-0060's
+     provider-driven authority model onto the mt-landvault-temp ↔
+     mt-landvault-api boundary: the provider (mt-landvault-temp) authors
+     and owns the OpenAPI contract; mt-landvault-api conforms as consumer.
+  2. The document states the ADR-0062 stewardship gap explicitly rather
+     than silently resolving it: full Platform Steward involvement is not
+     invoked for mt-landvault-temp given its explicitly temporary status,
+     but this is named as a gap to close if/when the boundary becomes a
+     permanent mt-data-* product, not an oversight.
+  3. The document references CCT-2026-0013 as the concrete artifact it
+     describes.
+  4. The document is written so CCT-2026-0003 (once unblocked) can fold it
+     in with minimal rework — it should not need to be re-derived.
+
+affects:
+  - contracts/provider-driven-boundaries.md   # new — this repo, name may change at authoring time
+
+dependencies:
+  - description: >
+      Informed by CCT-2026-0013 (the concrete mt-landvault-temp contract
+      publication) — write this addendum from what CCT-2026-0013 actually
+      builds, not ahead of it.
+
+tasks:
+  - id: t1
+    title: >
+      Draft the provider-driven addendum mapping ADR-0060/0062 onto the
+      mt-landvault-temp boundary
+    status: open
+    priority: must-have
+  - id: t2
+    title: >
+      Name the ADR-0062 stewardship gap explicitly (no Platform Steward
+      invoked yet, given mt-landvault-temp's temporary status)
+    status: open
+    priority: must-have
+  - id: t3
+    title: >
+      Cross-reference CCT-2026-0013 so the addendum and the artifact it
+      describes stay in sync
+    status: open
+    priority: should-have

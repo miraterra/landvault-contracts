@@ -1,0 +1,50 @@
+date: '2026-07-09'
+title: Draft the suitability quantile-selection clause (inverse targeting) in the discover-pod contract
+description: >-
+  Initiative iteration-2026-07, phase-contract (see
+  landvault-management/projects/iteration-2026-07/initiative-brief.yaml). From the PM 1:1 2026-07-09
+  (New Era / Corteva).
+
+
+  Extend the suitability surface in contracts/discover-pod/consumer-openapi.yaml with a
+  quantile-selection criterion: the request carries ONE analyte to optimize, a direction
+  (top/bottom), a percentage N, and the remaining conditions frozen at fixed values; the response
+  returns the selected regions in the SAME shape as the existing suitability response, so the
+  consumer delta stays small.
+
+
+  This is a ranking/quantile selection over regions — NOT the existing benchmark mode:"percent"
+  condition (value relative to a benchmark). The clause must keep the two distinct.
+
+
+  Granularity decision to record in this clause: county/region per the areal invariant ("fields" in
+  meeting language assumed to mean regions) — confirm with David at review.
+
+
+  Seed the clause examples with a REALISTIC county selection (plausible geometry/ids), because the
+  Prism mock generated from this contract doubles as the demo backend for the shell UI
+  (SHELL-2026-0825) until the provider lands. Provider implementation: DATA-2026-0088
+  (mt-landvault-api). Shell mock harness: SHELL-2026-0815. Consumer-driven per ADR-0060; this
+  contract package is the coordinating artifact.
+status: open
+status_history:
+  - status: open
+    timestamp: '2026-07-09T22:47:34.433Z'
+    by: system
+priority: p1
+what_to_resolve: >-
+  A reviewed and frozen clause in contracts/discover-pod/consumer-openapi.yaml covering the
+  quantile-selection request (analyte, direction, percentage, frozen conditions) and its response
+  (existing suitability shape), with the granularity decision recorded and examples realistic enough
+  that a Prism mock renders plausibly on the Discover map. Done when David has reviewed and frozen
+  the clause and the contract package's verify/self-check passes.
+impact: high
+impact_note: >-
+  First artifact of initiative iteration-2026-07 — everything in the inverse-targeting stream
+  (provider impl, shell mock, UI) builds against this clause.
+related:
+  - DATA-2026-0088
+  - SHELL-2026-0815
+  - SHELL-2026-0825
+  - BACKEND-2026-0018
+id: CCT-2026-0014

@@ -1,0 +1,25 @@
+date: '2026-07-09'
+title: Regenerate level2 expected-failures manifest against current main (v0.3.0)
+description: >-
+  Supersedes the stale cct-level2-manifest-refresh branch / PR #6 (closed 2026-07-09). That branch
+  refreshed level2/expected-failures.yaml to provider-main reality as of 2026-06-25, but was cut
+  before the v0.2.0 -> v0.3.0 contract uptick (PRs #7, #8) and the cage-issues migration landed on
+  main. Regenerate the manifest against current main so it reflects the 0.3.0 contract and the
+  provider's current main.
+status: open
+status_history:
+  - status: open
+    timestamp: '2026-07-09T23:38:11.167Z'
+    by: system
+what_to_resolve: >-
+  level2/expected-failures.yaml regenerated against current main (consumer-openapi.yaml v0.3.0) and
+  the provider's current main; `make level2` passes with the refreshed manifest; expected failures
+  match actual provider conformance state.
+focus: level2-manifest
+facet: implementation
+impact: medium
+impact_note: >-
+  level2 is the consumer<->provider conformance gate. A manifest pinned to the pre-0.3.0 contract
+  either masks real conformance failures or flags false ones.
+classification: standard
+id: CCT-2026-0015

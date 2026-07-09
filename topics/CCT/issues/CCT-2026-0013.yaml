@@ -1,0 +1,118 @@
+id: CCT-2026-0013
+date: '2026-07-07'
+status: open
+
+impact: high
+impact_note: >
+  This is the actual contract that closes the gap the whole
+  mt-landvault-api BFF-extraction initiative (plan-2026-0001) is about:
+  today mt-landvault-api sources data directly from Supabase/RDS/S3 with
+  no contract at all governing that boundary. This issue gives it one.
+
+focus: mt-landvault-temp-contract
+facet: implementation
+classification: standard
+initiative: contract-conformance-testing
+
+title: >
+  Publish mt-landvault-temp's provider-owned OpenAPI contract in
+  landvault-contracts
+
+description: >
+  Per ADR-0060, the mt-landvault-temp (provider) to mt-landvault-api
+  (consumer) boundary is provider-driven: the provider authors and owns
+  the interface. mt-landvault-temp should generate its own OpenAPI spec
+  from its actual implementation — mirroring how mt-landvault-api already
+  does this for its own consumer-facing contract via
+  scripts/generate-swagger.sh and swag annotations — not have the spec
+  hand-authored by mt-landvault-api-side agents guessing at shape.
+
+  That generated spec is published into a new contracts/ directory in
+  this repo (landvault-contracts), giving it the same durable,
+  independently-owned home the Discover Pod contract has (ADR-0057),
+  scoped deliberately light given mt-landvault-temp's explicitly temporary
+  status (mt-landvault-api plan-2026-0001, DATA-2026-0087): a plain
+  generated spec plus a simple diff-on-change check, not the full
+  four-surface conformance machinery (verify-spec/level1/level2/consumer
+  contract test) that contracts/discover-pod/ has. Standing up that full
+  machinery for a service you plan to hand off and restructure is
+  premature; it can be added later if mt-landvault-temp's boundary
+  outlives its temporary status.
+
+  This supersedes the "where does mt-landvault-temp's contract live"
+  question left open in mt-landvault-api's DATA-2026-0085 ("Write a
+  minimal API contract for mt-landvault-temp") — the answer is: generated
+  in mt-landvault-temp, published here.
+
+notes: >
+  Mandatory pre-reads: ADR-0060 (provider authors the interface), ADR-0057
+  (independent contract ownership pattern this reuses at reduced scope).
+  Companion issue: CCT-2026-0012 (the addendum documenting this as the
+  provider-driven worked example) — write that from what actually gets
+  built here, not ahead of it.
+
+  Depends on mt-landvault-api DATA-2026-0082 (stand up mt-landvault-temp)
+  existing before there is anything to generate a spec from.
+
+  Consumed by mt-landvault-api DATA-2026-0072 (regions delivery model,
+  reactivated 2026-07-07): its t3 ("implement a mt-landvault-temp endpoint
+  that resolves and returns the current PMTiles tileset URL") is the
+  concrete endpoint this issue's t1/t2 publish the contract for. Keep the
+  two in sync — DATA-2026-0072 assumes this contract exists.
+
+what_to_resolve: >
+  1. mt-landvault-temp generates its own OpenAPI spec from its
+     implementation (reusing the swag-based approach already proven in
+     mt-landvault-api, or an equivalent for whatever mt-landvault-temp is
+     built in).
+  2. The generated spec is published into a new contracts/<name>/
+     directory in this repo (name TBD at authoring time — e.g.
+     contracts/mt-landvault-temp/).
+  3. mt-landvault-api is documented as the (currently sole) verified
+     consumer.
+  4. The light-scope decision — no verify-spec/level1/level2 machinery
+     yet — is recorded explicitly in this repo's README or the new
+     contract directory's own README, so it reads as a deliberate,
+     revisitable choice rather than an oversight or a lower standard
+     silently applied.
+  5. mt-landvault-api's DATA-2026-0085 is updated to point here instead of
+     describing an internally-generated-only contract.
+
+affects:
+  - contracts/mt-landvault-temp/   # new — name TBD
+  - README.md   # document the deliberately-light scope for this boundary
+
+dependencies:
+  - description: >
+      mt-landvault-api DATA-2026-0082 (stand up mt-landvault-temp) must
+      exist before a spec can be generated from it.
+  - description: >
+      mt-landvault-api DATA-2026-0085 (minimal API contract for
+      mt-landvault-temp) — this issue supersedes its "where does the
+      contract live" open question.
+
+tasks:
+  - id: t1
+    title: >
+      Wire OpenAPI generation into mt-landvault-temp, sourced from its own
+      implementation
+    status: open
+    priority: must-have
+  - id: t2
+    title: >
+      Create contracts/mt-landvault-temp/ (or equivalent) in this repo and
+      publish the generated spec there
+    status: open
+    priority: must-have
+  - id: t3
+    title: >
+      Document mt-landvault-api as verified consumer and record the
+      deliberate light-scope decision
+    status: open
+    priority: must-have
+  - id: t4
+    title: >
+      Update mt-landvault-api DATA-2026-0085 to reference this contract's
+      real location
+    status: open
+    priority: must-have

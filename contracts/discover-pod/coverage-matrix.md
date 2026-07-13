@@ -27,6 +27,7 @@ All five §3.0 resources are present.
 | §3.2 | Measured county aggregate | `MeasuredCountyRecord`, `AggregateStats` | REQ-AGG | Covered |
 | §3.3 | Predicted county aggregate | `PredictedCountyRecord` | REQ-PRED | Covered (no confidence — §7-E) |
 | §3.4 | Suitability req/resp | `SuitabilityRequest`, `Criterion`, `Clause`, `SuitabilityData`, `SuitabilityRegion`, `SuitabilityMeasured`, `SuitabilityPredicted`, `SuitabilityCriterionResult` | REQ-RULE-RESULT | Covered |
+| §3.4.1 | Inverse targeting (field-match-percent back-solve) | `SuitabilityRequest.fieldMatchPercent` (top-level), `Clause.fieldOptimized` (default false), `Clause.direction` (enum top/bottom, default top), `SuitabilityData.solvedThreshold` (optional top-level scalar, NOT required) | REQ-RULE-INVERSE | Covered (additive to §3.4; forward flow untouched) |
 | §3.6 | BenchmarkRef | `BenchmarkRef` | REQ-AGG | Covered |
 | §3.7 | Histogram | `HistogramData`, `HistogramBin` | REQ-HIST | Covered |
 | §3.8 | source param / both | `SourceParam`, `BothCountyRecord` (`resolvedSource`) | REQ-PRED | Covered |
@@ -55,6 +56,7 @@ REQ tags that name a **contract wire element** (the scope of an OpenAPI projecti
 | REQ-AGG | §3.2 | Yes — MeasuredCountyRecord, AggregateStats, BenchmarkRef |
 | REQ-PRED (REQ-PRED-3) | §3.3 / §3.8 | Yes — PredictedCountyRecord (no confidence/counts), BothCountyRecord |
 | REQ-RULE-RESULT | §3.4 | Yes — full suitability req/resp graph |
+| REQ-RULE-INVERSE | §3.4.1 | Yes — additive `fieldMatchPercent` (SuitabilityRequest), `fieldOptimized` + `direction` (Clause), `solvedThreshold` (SuitabilityData). Cardinality rules are tier-5 residue (R6/R7, §7). |
 | REQ-HIST | §3.7 | Yes — HistogramData/HistogramBin |
 | REQ-STATE-1 / REQ-STATE-2 | §4 | Yes — via record-form encoding + EmptySuppressedState |
 
@@ -78,7 +80,7 @@ REQ tags that are **UI / behavioural** requirements (SPEC §5–§6), not wire-c
 
 NFRs: `NFR-VER-1` (version marker + tolerate additive fields) → `Envelope.contractVersion` + additive-field policy. `NFR-PERF-1`, `NFR-MAT-1`, `NFR-A11Y-1` are non-wire.
 
-**Count:** ~40 REQ-* tags in SPEC. 8 are wire-contract tags (REQ-META, REQ-AGG, REQ-PRED/-3, REQ-RULE-RESULT, REQ-HIST, REQ-STATE-1/-2) — all addressed in the OpenAPI. The remaining ~32 are UI/behavioural/NFR tags that an HTTP contract does not project; each is backed by a contract field as listed above. §3.5 (own FarmSample) is the one explicit OUT-OF-SCOPE data shape (S19/S20).
+**Count:** ~40 REQ-* tags in SPEC. 9 are wire-contract tags (REQ-META, REQ-AGG, REQ-PRED/-3, REQ-RULE-RESULT, REQ-RULE-INVERSE, REQ-HIST, REQ-STATE-1/-2) — all addressed in the OpenAPI. The remaining ~32 are UI/behavioural/NFR tags that an HTTP contract does not project; each is backed by a contract field as listed above. §3.5 (own FarmSample) is the one explicit OUT-OF-SCOPE data shape (S19/S20).
 
 ---
 
@@ -118,3 +120,75 @@ SPEC governs the contract. Where the client or fixtures diverge, the divergence 
 2. **D3 (summary):** Decide whether the suitability `summary` block (live in client + fixtures via SHELL-2026-0678) should be promoted into SPEC §3.4, or stay a consumer-optional additive field. The OpenAPI currently models it as optional with a divergence note. *(This is the one genuine SPEC-vs-implementation gap.)*
 3. **D2 (catalogue regions):** Confirm `regions` belongs in the catalogue contract (SPEC says yes); the client not consuming it is a client-side gap, not a contract change.
 4. **Scope confirmation:** §3.5 own-FarmSample is deliberately absent (OUT OF SCOPE per S19/S20/§1). Confirm no other §3 element was expected.
+
+---
+
+## 7. Inverse targeting (REQ-RULE-INVERSE, SPEC §3.4.1) — residue & decisions
+
+The inverse-targeting clause (CCT-2026-0014) is additive to the §3.4 suitability
+surface: the request sets a target percentage of **fields** (`fieldMatchPercent`),
+the provider back-solves the analyte threshold that yields that field pass-rate,
+aggregates matching fields **by county**, and returns today's suitability response
+shape plus the one solved threshold (`solvedThreshold`). The forward flow is
+untouched (`fieldOptimized` defaults `false`).
+
+### 7.1 Schema-coverage — REQ-RULE-INVERSE → OpenAPI elements
+
+| SPEC §3.4.1 element | OpenAPI element (`x-req: REQ-RULE-INVERSE`) | Notes |
+|---|---|---|
+| `fieldMatchPercent` (request, top-level) | `SuitabilityRequest.fieldMatchPercent` | Integer 0–100 (**provisional**, §3.4.2 #8). Presence marks the request inverse. Top-level of the JSON carried in the URL-encoded `request` query param — NOT a new operation-level query parameter. |
+| `fieldOptimized` (per-clause) | `Clause.fieldOptimized` | Boolean, **default `false`**. Marks the single clause whose threshold is solved. |
+| `direction` (per-clause) | `Clause.direction` | Enum `["top","bottom"]`, **default `"top"`**. Sole direction carrier on the optimized clause (op ignored there). |
+| `solvedThreshold` (response) | `SuitabilityData.solvedThreshold` | Single top-level scalar on the response `data`, in absolute analyte units. OPTIONAL — deliberately NOT in `SuitabilityData.required` (the forward flow shares this schema and must not break). |
+| op/threshold ignored on optimized clause (A1) | `Clause` `if/then/else` on `fieldOptimized` | OpenAPI 3.1 (JSON Schema 2020-12) conditional: `fieldOptimized:true` ⇒ only `analyte` required (no dummy op/threshold); absent/false ⇒ `analyte`+`op`+`threshold` required, forward contract preserved exactly. |
+
+### 7.2 Distinctness (advisory A5)
+
+- `fieldMatchPercent` is a percentage of the ranked **FIELD POPULATION** (which
+  fields pass) — **orthogonal** to a clause's `mode:"percent"`/`threshold`, which is
+  a percentage of a benchmark **VALUE** (REQ-RULE-RESULT, §3.4). The two coexist:
+  `fieldOptimized` governs "solve vs given"; `mode` keeps its value-semantics.
+- The clause is kept verbally distinct from the §7-G statistical quantile/quartile
+  binning (q1/q3/median/whiskers): `direction: "top"|"bottom"` is a **selection
+  direction**, not a quartile or whisker bin.
+
+### 7.3 Granularity decision
+
+The inverse selection aggregates **by county / region**, per the areal invariant
+(INV-2 county floor, S4): the response reuses the schema's existing `region` /
+`regionId` vocabulary (`SuitabilityData.regions[].regionId`) — **no new "county"
+field is introduced**. "Fields" is the ranking population the backend solves over
+server-side (INV-1); the consumer never sees field-level data. The unit the user
+targets is a percentage of fields, back-solved to a threshold, then aggregated to
+the county display unit. (Confirm with David at review — issue `what_to_resolve`.)
+
+### 7.4 Tier-5 semantic residue (ADR-0059 tier 5 — human-reviewed, not auto-gated)
+
+Cross-field cardinality rules §3.4.1 specifies that JSON Schema **cannot** express.
+Mirrors the SPEC §8.3 residue style (R1/R2). These are enforced **server-side** and
+surfaced to the consumer through the `getArealSuitability` **400 `ErrorResponse`**
+channel; the verifier asserts they are **documented** on that 400 path, not
+structurally enforced in schema.
+
+| ID | Source | Residual invariant | Why OpenAPI cannot express it | Rejection channel |
+|---|---|---|---|---|
+| R6 | §3.4.1 | **EXACTLY ONE** `fieldOptimized:true` clause per request; **more than one MUST be rejected** (single-variable solve, v1). | JSON Schema cannot count how many array items across `criteria[].clauses[]` set a given property to a value, nor assert "at most/exactly one" across that nesting. | `getArealSuitability` `400` (`ErrorResponse`). |
+| R7 | §3.4.1 / §3.4.2 #9 | **PROVISIONAL:** a request carrying `fieldMatchPercent` with **zero** `fieldOptimized:true` clauses is rejected as out-of-scope for v1 (nothing to solve). Product choice to confirm at the demo — not frozen. | Same cross-field cardinality limitation (presence of a top-level field conditioned on the count of a nested property) — and it is provisional, so it is deliberately not hardened into schema. | `getArealSuitability` `400` (`ErrorResponse`). |
+
+### 7.5 Provisional markers (advisory A3)
+
+Encoded as anticipated stabilization, not frozen MUSTs (SPEC §3.4.2):
+
+- `fieldMatchPercent` meaning — **"N% of what?"** (assumption #1, **HIGH RISK**,
+  validate FIRST at the demo) — flagged in the `SuitabilityRequest.fieldMatchPercent`
+  description and marked `x-provisional: true`.
+- `fieldMatchPercent` type/range (integer 0–100, item #8) — same field, same
+  `x-provisional` marker + description note.
+- Zero-optimized-clause rule (item #9) — residue R7 above + documented on the 400 path.
+- `solvedThreshold` per-source multiplicity (single scalar vs one per source) — open
+  item tied to assumption #1, noted in the `solvedThreshold` description as a
+  potential follow-up promotion, not a breaking change.
+
+The snake_case `field_optimized` in the initiative-brief prose is superseded: SPEC
+§3.4.1 camelCase names (`fieldMatchPercent`, `fieldOptimized`, `direction`,
+`solvedThreshold`) are authoritative and used verbatim (advisory A4).

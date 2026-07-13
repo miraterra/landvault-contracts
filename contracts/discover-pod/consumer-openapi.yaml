@@ -193,8 +193,61 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SuitabilityEnvelope'
+              example:
+                # INVERSE-TARGETING response (REQ-RULE-INVERSE, SPEC §3.4.1) — seeds
+                # the Prism mock so the Discover map renders plausibly for the demo.
+                # fieldMatchPercent 25 back-solved to solvedThreshold 2.82 (%OC);
+                # matching fields aggregated by county (plausible Iowa FIPS ids).
+                contractVersion: "0.3.0"
+                generatedAt: "2026-07-13T12:00:00Z"
+                query:
+                  source: measured
+                  crop: corn
+                  fieldMatchPercent: 25
+                data:
+                  ratingThresholds: [0.30, 0.70]
+                  solvedThreshold: 2.82
+                  regions:
+                    - regionId: "19153"      # Polk County, IA
+                      measured:
+                        suppressed: false
+                        score: 0.42
+                        criteria:
+                          - id: carbon-target
+                            matchingFields: 79
+                            totalFields: 188
+                            density: 0.42
+                    - regionId: "19169"      # Story County, IA
+                      measured:
+                        suppressed: false
+                        score: 0.25
+                        criteria:
+                          - id: carbon-target
+                            matchingFields: 30
+                            totalFields: 120
+                            density: 0.25
+                    - regionId: "19013"      # Black Hawk County, IA
+                      measured:
+                        suppressed: false
+                        score: 0.11
+                        criteria:
+                          - id: carbon-target
+                            matchingFields: 8
+                            totalFields: 72
+                            density: 0.11
         '400':
-          description: Missing or malformed `request` param (e.g. criteria not an array). Provider-observed.
+          description: >
+            Rejected request (provider-observed; ErrorResponse body). Covers a missing
+            or malformed `request` param (e.g. criteria not an array) AND the
+            INVERSE-TARGETING rejection rules (REQ-RULE-INVERSE, SPEC §3.4.1). A
+            request with MORE THAN ONE fieldOptimized:true clause MUST be rejected
+            (single-variable solve only, v1). PROVISIONAL (SPEC §3.4.2 item #9): under
+            the current working assumption, a request carrying fieldMatchPercent with
+            ZERO fieldOptimized:true clauses is rejected as out-of-scope for v1
+            (nothing to solve) — a product choice to confirm at the demo, not a frozen
+            rule. These cross-field cardinality rules are NOT expressible in JSON
+            Schema (see coverage-matrix.md tier-5 residue R6/R7); this 400 path is
+            their rejection channel.
           content:
             application/json:
               schema:
@@ -646,10 +699,54 @@ components:
             which benchmark values to use for percent-mode comparisons. The backend
             resolves the name to a database UUID and uses a 4-tier fallback:
             regional+crop, national+crop, regional+OTHER, national+OTHER.
+        fieldMatchPercent:
+          type: integer
+          minimum: 0
+          maximum: 100
+          x-req: REQ-RULE-INVERSE
+          x-spec-section: "§3.4.1"
+          x-provisional: true
+          description: >
+            INVERSE TARGETING (REQ-RULE-INVERSE, SPEC §3.4.1). Top-level, additive,
+            OPTIONAL. The target: the percentage of the ranked FIELD POPULATION the
+            user wants to fall in the selected direction. Its presence marks this
+            request as an inverse-targeting request — the backend back-solves the
+            analyte threshold (on the single fieldOptimized clause) that yields this
+            field pass-rate, aggregates matching fields BY COUNTY, and returns today's
+            suitability response shape plus the one solved threshold (solvedThreshold
+            on the response data). Absent ⇒ ordinary forward flow (§3.4), unchanged.
+
+            DISTINCT from clause `mode: "percent"` / `threshold` (REQ-RULE-RESULT,
+            §3.4): fieldMatchPercent is a percentage of the ranked FIELD POPULATION
+            (how many fields pass), which is ORTHOGONAL to `mode: "percent"` — a
+            percentage of a benchmark VALUE. It is also unrelated to the §7-G
+            statistical quantile fields (q1/q3/median) carried on aggregate records:
+            this is a targeting input, not a distribution summary.
+
+            PROVISIONAL (SPEC §3.4.2). Two provisional items ride on this field: (1)
+            "N% of what?" — the field population it ranges over (assumption #1, HIGH
+            RISK, to be surfaced and validated FIRST at the demo before the inverse
+            mechanism is frozen); and (8) the type/range (working assumption: integer
+            in the closed range 0–100). Both are product choices to confirm at the
+            demo, NOT frozen rules — a post-demo revision to population semantics or
+            type/range reads as anticipated stabilization, not a breaking change.
         criteria:
           type: array
           items:
             $ref: '#/components/schemas/Criterion'
+      example:
+        source: measured
+        crop: corn
+        fieldMatchPercent: 25
+        criteria:
+          - id: carbon-target
+            weight: 1.0
+            clauses:
+              # INVERSE clause: op/threshold OMITTED (solved for, not sent as
+              # dummy values — SPEC §3.4.1 / A1); direction carries the direction.
+              - analyte: soil-organic-carbon
+                fieldOptimized: true
+                direction: top
 
     Criterion:
       type: object
@@ -671,33 +768,91 @@ components:
     Clause:
       type: object
       description: >
-        One clause — analyte + op + threshold (SPEC §3.4). The threshold is the
-        comparison value for the specified analyte. When mode is "percent", the
-        threshold represents a percentage of the high_benchmark (0-300).
+        One clause (SPEC §3.4 / §3.4.1). FORWARD (REQ-RULE-RESULT): analyte + op +
+        threshold (+ optional mode); the user supplies the threshold and the backend
+        reports which share of each county's fields match. When mode is "percent", the
+        threshold represents a percentage of the high_benchmark (0-300). INVERSE
+        (REQ-RULE-INVERSE, SPEC §3.4.1): setting fieldOptimized:true marks this as the
+        single clause whose threshold the backend SOLVES for; on that clause `op` and
+        `threshold` are IGNORED (they are NOT sent as dummy values — see the
+        conditional `required` below), and `direction` is the SOLE carrier of
+        comparison direction. `fieldOptimized` and `mode` are ORTHOGONAL (§3.4.1):
+        fieldOptimized governs "solve vs given", while `mode` keeps its existing
+        value-semantics (including the units solvedThreshold is reported in).
       x-req: REQ-RULE-RESULT
       x-spec-section: "§3.4"
-      required: [analyte, op, threshold]
+      required: [analyte]
       properties:
         analyte:
           type: string
         op:
           type: string
-          description: Comparison operator (SPEC §3.4 example uses ">=").
+          description: >
+            Comparison operator (SPEC §3.4 example uses ">="). Required on a FORWARD
+            clause; IGNORED on a fieldOptimized:true clause (§3.4.1 — direction carries
+            the direction there).
           enum: [">=", "<=", "<", ">"]
         threshold:
           type: number
           description: >
             The comparison value. When mode=absolute, this is compared directly
             against the analyte value. When mode=percent, this represents a
-            percentage of the high_benchmark (0-300).
+            percentage of the high_benchmark (0-300). Required on a FORWARD clause;
+            IGNORED on a fieldOptimized:true clause (§3.4.1 — the backend solves for
+            it and reports it as solvedThreshold).
         mode:
           type: string
           description: >
             How to interpret the threshold. "absolute" compares against the raw
             analyte value; "percent" compares against a percentage of the
             high_benchmark. Defaults to "absolute" for backwards compatibility.
+            Orthogonal to fieldOptimized (SPEC §3.4.1).
           enum: [absolute, percent]
           default: absolute
+        fieldOptimized:
+          type: boolean
+          default: false
+          x-req: REQ-RULE-INVERSE
+          x-spec-section: "§3.4.1"
+          description: >
+            INVERSE TARGETING (REQ-RULE-INVERSE, SPEC §3.4.1). Per-clause, additive.
+            Marks the single clause whose threshold the backend back-solves from the
+            top-level fieldMatchPercent. Default false ⇒ the forward flow is untouched
+            (a request with no optimized clause behaves exactly as it does today).
+            EXACTLY ONE clause per request MAY set this true (single-variable solve,
+            v1). On a true clause `op` and `threshold` are IGNORED and `direction` is
+            the sole direction carrier. The "exactly one true" cardinality and the
+            zero-optimized-clause rule are cross-field rules JSON Schema CANNOT express
+            — they are enforced server-side and rejected via the getArealSuitability
+            400 path (see coverage-matrix.md tier-5 residue R6/R7).
+        direction:
+          type: string
+          enum: [top, bottom]
+          default: top
+          x-req: REQ-RULE-INVERSE
+          x-spec-section: "§3.4.1"
+          description: >
+            INVERSE TARGETING (REQ-RULE-INVERSE, SPEC §3.4.1). Per-clause, additive.
+            Meaningful only on the fieldOptimized clause, where it is the SOLE carrier
+            of comparison direction (op is ignored there). "top" (default) solves the
+            threshold so the highest-passing fieldMatchPercent% of the ranked
+            population passes; "bottom" selects the lowest-passing. This is a selection
+            direction — NOT a statistical quartile/whisker bin (§7-G).
+      # A1 (SPEC §3.4.1): op/threshold are required ONLY on a FORWARD clause. On a
+      # fieldOptimized:true clause they are IGNORED and MUST NOT be sent as dummy
+      # values, so they are NOT required there — `direction` carries the direction.
+      # OpenAPI 3.1 (JSON Schema 2020-12) if/then/else expresses this without
+      # disturbing the forward contract: absent/false fieldOptimized ⇒ else branch ⇒
+      # analyte+op+threshold required, exactly as before this clause was added.
+      if:
+        required: [fieldOptimized]
+        properties:
+          fieldOptimized:
+            const: true
+      then:
+        required: [analyte]
+      else:
+        required: [analyte, op, threshold]
 
     SuitabilityEnvelope:
       description: Envelope whose data is the suitability response (SPEC §3.4).
@@ -730,6 +885,27 @@ components:
             - type: number
           items:
             type: number
+        solvedThreshold:
+          type: number
+          x-req: REQ-RULE-INVERSE
+          x-spec-section: "§3.4.1"
+          description: >
+            INVERSE TARGETING (REQ-RULE-INVERSE, SPEC §3.4.1). The single analyte
+            threshold the backend back-solved so that the top-level fieldMatchPercent%
+            of the ranked field population falls in the requested direction, reported
+            in ABSOLUTE analyte units (the optimized clause's analyte in its native
+            unit — the same units a forward mode:"absolute" threshold uses). A SINGLE
+            top-level scalar because one back-solve population yields one threshold; it
+            is NOT nested per-clause (the suitability response has no clause-level
+            object — see the SuitabilityRegion shape). OPTIONAL and additive
+            (NFR-VER-1): present ONLY when the request carried fieldMatchPercent and a
+            valid optimized clause, and ABSENT on every forward-flow response — which
+            is why it is deliberately NOT in this schema's `required` list (the forward
+            flow shares SuitabilityData and must not break). PROVISIONAL per-source
+            note (SPEC §3.4.1 open item, tied to §3.4.2 assumption #1): v1 reports a
+            single scalar; if the demo confirms per-source solving this may promote to
+            one scalar per source in a follow-up revision (anticipated stabilization,
+            not a breaking change).
         regions:
           type: array
           items:

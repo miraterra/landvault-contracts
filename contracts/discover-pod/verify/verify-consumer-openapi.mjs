@@ -225,13 +225,14 @@ check('C6-schemas-tagged', scTotal > 0 && scTagged === scTotal,
 //   In-scope contract REQ tags (the ones that name wire-observable shapes/ops):
 // ---------------------------------------------------------------------------
 const REQUIRED_REQ_TAGS = [
-  'REQ-META',        // §3.1 GET /areal
-  'REQ-AGG',         // §3.2 measured aggregate record
-  'REQ-PRED',        // §3.3 predicted aggregate record
-  'REQ-RULE-RESULT', // §3.4 GET /areal/suitability
-  'REQ-HIST',        // §3.7 GET /areal/histograms/{id}
-  'REQ-STATE-1',     // §4 distinct empty/suppressed states
-  'REQ-STATE-2',     // §4 render suppressed without statistics
+  'REQ-META',         // §3.1 GET /areal
+  'REQ-AGG',          // §3.2 measured aggregate record
+  'REQ-PRED',         // §3.3 predicted aggregate record
+  'REQ-RULE-RESULT',  // §3.4 GET /areal/suitability
+  'REQ-RULE-INVERSE', // §3.4.1 inverse targeting (field-match-percent back-solve)
+  'REQ-HIST',         // §3.7 GET /areal/histograms/{id}
+  'REQ-STATE-1',      // §4 distinct empty/suppressed states
+  'REQ-STATE-2',      // §4 render suppressed without statistics
 ];
 // OUT OF SCOPE for the consumer wire contract (UI/render/colour requirements,
 // own-farm, framework gaps) — NOT expected in this OpenAPI:
@@ -339,6 +340,86 @@ check('C8-resolved-source',
 check('C8-benchmark-ref',
   /\bbenchmarkApplied\b/.test(docText) && (/\bBenchmarkRef\b/.test(docText) || /crop-mlra/.test(docText)),
   '§3.6 BenchmarkRef / benchmarkApplied present');
+
+// ---------------------------------------------------------------------------
+// C9 — REQ-RULE-INVERSE inverse-targeting clause (SPEC §3.4.1).
+//   STRUCTURAL assertions (not mere token presence): the additive fields sit on
+//   the correct schemas, with the correct defaults/enums/multiplicity, and the
+//   >1-optimized-clause rejection is DOCUMENTED (not structurally enforced — it is
+//   a cross-field cardinality rule JSON Schema cannot express) on a 400 path.
+// ---------------------------------------------------------------------------
+{
+  const suitReq = schemas.SuitabilityRequest ?? {};
+  const clause = schemas.Clause ?? {};
+  const suitData = schemas.SuitabilityData ?? {};
+  const suitRegion = schemas.SuitabilityRegion ?? {};
+
+  // (a) fieldMatchPercent is a SuitabilityRequest property, NOT an operation parameter.
+  const fmpIsReqProp = !!suitReq.properties?.fieldMatchPercent;
+  let fmpIsOpParam = false;
+  for (const [p, item] of Object.entries(paths)) {
+    for (const m of ['get', 'post', 'put', 'patch', 'delete']) {
+      if (item && item[m]) {
+        const ps = collectParams(paths, p, item[m]);
+        if (ps.some((x) => x && x.name === 'fieldMatchPercent')) fmpIsOpParam = true;
+      }
+    }
+  }
+  check('C9-fieldMatchPercent-req-prop',
+    fmpIsReqProp && !fmpIsOpParam,
+    `§3.4.1 fieldMatchPercent is a SuitabilityRequest property (${fmpIsReqProp}) and NOT an operation-level query parameter (op-param: ${fmpIsOpParam})`);
+
+  // (b) fieldOptimized is a Clause property, boolean, default false.
+  const fo = clause.properties?.fieldOptimized;
+  check('C9-fieldOptimized-clause-default',
+    !!fo && fo.type === 'boolean' && fo.default === false,
+    `§3.4.1 Clause.fieldOptimized present, boolean, default:false (present: ${!!fo}, type: ${JSON.stringify(fo?.type)}, default: ${JSON.stringify(fo?.default)})`);
+
+  // (c) direction is a Clause property, enum ⊇ {top,bottom}, default "top".
+  const dir = clause.properties?.direction;
+  const dirEnum = dir?.enum ?? [];
+  check('C9-direction-clause-enum-default',
+    !!dir && dirEnum.includes('top') && dirEnum.includes('bottom') && dir.default === 'top',
+    `§3.4.1 Clause.direction present, enum⊇{top,bottom}, default "top" (enum: ${JSON.stringify(dirEnum)}, default: ${JSON.stringify(dir?.default)})`);
+
+  // (d) solvedThreshold is a SuitabilityData property, NOT in its required, and NOT
+  //     present on SuitabilityRegion or any clause object.
+  const stOnData = !!suitData.properties?.solvedThreshold;
+  const stInDataRequired = Array.isArray(suitData.required) && suitData.required.includes('solvedThreshold');
+  const stOnRegion = !!suitRegion.properties?.solvedThreshold;
+  const stOnClause = !!clause.properties?.solvedThreshold;
+  check('C9-solvedThreshold-placement',
+    stOnData && !stInDataRequired && !stOnRegion && !stOnClause,
+    `§3.4.1 solvedThreshold on SuitabilityData (${stOnData}), NOT in its required (${stInDataRequired}), NOT on SuitabilityRegion (${stOnRegion}) or Clause (${stOnClause})`);
+
+  // (e) A1: op/threshold are relaxed CONDITIONALLY (if/then/else on fieldOptimized),
+  //     so the forward contract still requires op+threshold and the optimized clause
+  //     does not carry dummy op/threshold. Assert the conditional exists AND the
+  //     forward branch (else) still requires op+threshold.
+  const elseReq = clause.else?.required ?? [];
+  const hasConditional =
+    !!clause.if && !!clause.else &&
+    elseReq.includes('op') && elseReq.includes('threshold') &&
+    !(Array.isArray(clause.required) && (clause.required.includes('op') || clause.required.includes('threshold')));
+  check('C9-clause-conditional-required',
+    hasConditional,
+    `§3.4.1/A1 Clause requires op+threshold only via if/else on fieldOptimized (if: ${!!clause.if}, else.required: ${JSON.stringify(elseReq)}, unconditional required: ${JSON.stringify(clause.required)})`);
+
+  // (f) >1 optimized-clause rejection DOCUMENTED on the getArealSuitability 400 path.
+  const op = findOp('GET', '/areal/suitability');
+  let rejDocumented = false;
+  if (op) {
+    const r400 = op.op.responses?.['400'];
+    const desc = String(r400?.description ?? '');
+    rejDocumented =
+      !!r400 &&
+      /fieldOptimized/.test(desc) &&
+      /(more than one|multiple|>\s*1|single-variable)/i.test(desc);
+  }
+  check('C9-multi-optimized-400',
+    rejDocumented,
+    '§3.4.1 the >1 fieldOptimized:true clause rejection is documented on the getArealSuitability 400 response');
+}
 
 // ---------------------------------------------------------------------------
 function collectParams(allPaths, rawPath, op) {

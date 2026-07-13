@@ -26,12 +26,19 @@ description: >-
   (SHELL-2026-0825) until the provider lands. Provider implementation: DATA-2026-0088
   (mt-landvault-api). Shell mock harness: SHELL-2026-0815. Consumer-driven per ADR-0060; this
   contract package is the coordinating artifact.
-status: open
+status: resolved
 status_history:
   - status: open
     timestamp: '2026-07-09T22:47:34.433Z'
     by: system
-priority: p1
+  - status: resolved
+    timestamp: '2026-07-13T07:31:43.840Z'
+    by: agent
+    rationale: >-
+      Inverse-targeting clause (REQ-RULE-INVERSE) drafted from frozen SPEC §3.4.1, verify-spec
+      40/40, Test Validator AGREEMENT. Landed via PR #12 and frozen on merge to main (David's review
+      = the DoD freeze). Provisional items (#1 "N% of what" HIGH RISK, fieldMatchPercent type/range,
+      zero-optimized rule) carried as x-provisional for demo validation.
 what_to_resolve: >-
   A reviewed and frozen clause in contracts/discover-pod/consumer-openapi.yaml covering the
   quantile-selection request (analyte, direction, percentage, frozen conditions) and its response
@@ -48,3 +55,6 @@ related:
   - SHELL-2026-0825
   - BACKEND-2026-0018
 id: CCT-2026-0014
+pull_request: https://github.com/miraterra/landvault-contracts/pull/12
+resolved_date: '2026-07-13T07:31:43.840Z'
+priority: p1

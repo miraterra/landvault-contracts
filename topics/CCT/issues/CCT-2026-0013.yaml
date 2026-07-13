@@ -9,6 +9,20 @@ impact_note: >
   today mt-landvault-api sources data directly from Supabase/RDS/S3 with
   no contract at all governing that boundary. This issue gives it one.
 
+  SCOPE AMENDED 2026-07-10 (David): rigor upgraded from deliberately-light
+  (diff-on-change only) to FULL Level-1/Level-2 conformance machinery —
+  this files the widen that the bff-extraction brief recorded as "issue
+  update to file via cage on request".
+
+  SCOPE AMENDED 2026-07-11 (Thinker architecture review, David sign-off):
+  mt-landvault-temp is the ANALYTICAL system in a three-system model
+  (landvault-backend = operational source of truth; mt-landvault-api =
+  BFF). Its contract surface is five capabilities — catalogue, prediction,
+  analytes, correlations, suitability match-counts — with regions,
+  histogram, and all screen-shaped logic excluded (see what_to_resolve
+  items 6-7). The initiative brief in landvault-management
+  (projects/bff-extraction/) carries the full design record.
+
 focus: mt-landvault-temp-contract
 facet: implementation
 classification: standard
@@ -54,13 +68,18 @@ notes: >
   Depends on mt-landvault-api DATA-2026-0082 (stand up mt-landvault-temp)
   existing before there is anything to generate a spec from.
 
-  Consumed by mt-landvault-api DATA-2026-0072 (regions delivery model,
-  reactivated 2026-07-07): its t3 ("implement a mt-landvault-temp endpoint
-  that resolves and returns the current PMTiles tileset URL") is the
-  concrete endpoint this issue's t1/t2 publish the contract for. Keep the
-  two in sync — DATA-2026-0072 assumes this contract exists.
+  (STALE as of 2026-07-11 — retained for history:) Consumed by
+  mt-landvault-api DATA-2026-0072 (regions delivery model, reactivated
+  2026-07-07): its t3 ("implement a mt-landvault-temp endpoint that
+  resolves and returns the current PMTiles tileset URL") was the concrete
+  endpoint this issue's t1/t2 would publish the contract for. DATA-2026-
+  0072 was re-reversed 2026-07-11: regions stays a BFF-served binary
+  stream, temp has no regions/tileset endpoint, and 0072's t3-t5 are
+  cancelled. No regions capability appears in this contract.
 
 what_to_resolve: >
+  (Scope amended 2026-07-10 and 2026-07-11 — see impact_note.)
+
   1. mt-landvault-temp generates its own OpenAPI spec from its
      implementation (reusing the swag-based approach already proven in
      mt-landvault-api, or an equivalent for whatever mt-landvault-temp is
@@ -70,13 +89,30 @@ what_to_resolve: >
      contracts/mt-landvault-temp/).
   3. mt-landvault-api is documented as the (currently sole) verified
      consumer.
-  4. The light-scope decision — no verify-spec/level1/level2 machinery
-     yet — is recorded explicitly in this repo's README or the new
-     contract directory's own README, so it reads as a deliberate,
-     revisitable choice rather than an oversight or a lower standard
-     silently applied.
+  4. The boundary carries FULL conformance machinery — a diff-on-change
+     guard PLUS Level-1/Level-2 verification (verify-spec + conformance
+     tests). UPGRADED from the original deliberately-light scope by
+     David's decision 2026-07-10; the light-scope rationale below is
+     retained as history, not current policy.
   5. mt-landvault-api's DATA-2026-0085 is updated to point here instead of
-     describing an internally-generated-only contract.
+     describing an internally-generated-only contract. (Done 2026-07-11 on
+     mt-landvault-api PR #136.)
+  6. (2026-07-11 architecture review) The contract surface is the FIVE
+     analytical capabilities of the seam design: catalogue (analyte ids +
+     valueRanges + governed K/M/K' thresholds), prediction (filtered/
+     paginated rows), analytes (per-source measured/predicted county
+     stats, suppression applied), correlations (+ MLRA resolution), and
+     suitability MATCH-COUNTS (totalFields/matchingFields per county — no
+     composite score). Explicitly NOT in temp's contract: regions/tiles
+     (stays a BFF capability; DATA-2026-0072 re-reversed), histogram
+     (retired), and all screen-shaped logic (RYG ratingThresholds,
+     filterSteps, composite suitability score, measured/predicted "both"
+     fusion — BFF-side per DATA-2026-0083).
+  7. (2026-07-11) Consumer-contract coordination: mt-landvault-api's
+     shell-facing contract gains /areal/v1/* paths (dual-run migration,
+     response shapes identical). That change lives in the discover-pod
+     contract space — coordinate with the active CCT-2026-0014 /
+     iteration-2026-07 work so the two edits don't collide.
 
 affects:
   - contracts/mt-landvault-temp/   # new — name TBD

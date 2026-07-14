@@ -1,0 +1,138 @@
+date: '2026-07-14'
+title: >-
+  Reconcile discover-pod contract to the real merged backend — analytes `scale` default +
+  inverse-clause realign (post PR #148)
+description: >-
+  Initiative iteration-2026-07, phase-contract. The Level-1 Contract Gate is failing on
+  landvault-shell PR #256 (initiative/iteration-2026-07) — confirmed via the actual CI run (gh run
+  29356475683) and reproduced locally with `make level1` against the real merged mt-landvault-api
+  provider spec. This issue reconciles the consumer-required contract
+  (discover-pod/consumer-openapi.yaml) to match the REAL, MERGED backend (mt-landvault-api main @
+  8f5fac6, descendant of PR #148 merge 257f720). Consumer-driven (ADR-0060) is overridden by the
+  provider in practice here — the provider is source of truth for this reconciliation, documented in
+  this issue.
+
+
+  TWO independent drifts, landing in one revision:
+
+
+  (A) Analytes `scale` default — THE confirmed Level-1 blocker. The ONLY ERROR-level oasdiff finding
+  is `[request-parameter-default-value-added]` on `GET /areal/analytes/{analyteId}`: the provider
+  now declares `default: absolute` on the `scale` query parameter (swag annotation `@Param scale
+  query string false "Value scale" Enums(absolute, benchmark) default(absolute)`, api/api.go:242);
+  our contract declares the enum but no default. Confirmed in source: when `scale` is omitted or
+  anything other than literally "benchmark", the handler falls through to absolute behavior
+  (api/api.go:251,258,288 — `resolvedQuery["scale"] = "absolute"` is the baseline, only overridden
+  when `scale == "benchmark"`). This is a pure documentation/annotation gap — zero behavior change,
+  purely additive. NOTE: this is NOT on /areal/suitability (suitability has no `scale` concept at
+  all — its analogous toggle is the already-correct per-clause `Clause.mode: absolute|percent`,
+  which already matches the backend exactly; verified against types/suitability/constants.go and
+  normalizeClause). An earlier framing of this issue mis-scoped the drift to suitability; corrected
+  here after reproducing the actual gate failure.
+
+
+  (B) Inverse-targeting clause realign (CCT-2026-0014 diverged from the real merged provider, PR
+  #148 merge 257f720). The clause frozen in CCT-2026-0014 invented shape that the shipped backend
+  does not implement. Verified directly against mt-landvault-api Go source
+  (types/suitability/constants.go, datasets/suitability/suitability.go, sql/suitability/*):
+    - Request: fieldMatchPercent -> field_match_percent, fieldOptimized -> field_optimized (snake_case, confirmed JSON tags, no camelCase alias exists).
+    - REMOVE the `direction` field entirely — it does not exist in the backend. Comparison direction is carried solely by the clause's existing `op` field (>=, <=, <, >); confirmed via CalculatePercentile branching on op. threshold stays on the optimized clause (required, not omitted) as the client-supplied placeholder that the backend overwrites in place with the solved value.
+    - REMOVE the top-level `solvedThreshold` response field — it does not exist. The solved value is surfaced in TWO real places instead: (1) a new top-level `computed_thresholds` map (`map[string]float64`, keyed by analyte name) on SuitabilityData, alongside a new `target_match_percent` scalar (the echoed request percent); AND (2) echoed back into `query.criteria[].clauses[].threshold` for the one solved clause (an aliasing side effect, tracked upstream as DATA-2026-0095 — not a designed contract, but real and observable).
+    - ADD per-region camelCase `analyteAverages` and `nonMatchingAnalyteAverages` (map[string]float64 keyed by analyte, on SuitabilityResult alongside score/criteria) — confirmed present for both measured and predicted results.
+    - Multiplicity note: the backend validates "at least one field_optimized:true clause" (400 if fieldMatchPercent present with zero) but does NOT reject more than one — it silently uses the FIRST match only (confirmed by the backend's own test, TestUpdateClauseThreshold_OnlyUpdatesFirstMatch; tracked as an open, undecided design gap upstream, DATA-2026-0094). The currently-frozen contract's tier-5 residue rows (R6/R7) documented a ">1 MUST be rejected (400)" rule that the real backend does not implement — align the contract's residue documentation to the real (first-wins, silently-undefined-for-duplicates) behavior rather than the aspirational rejection rule, and reference DATA-2026-0094 as the open upstream question.
+    - source:"both" solves thresholds from measured data only (no predicted-specific threshold exists); note as a known limitation, not a gap to fix here.
+
+  Verification path: `make verify-spec` (own fidelity gate) must pass; `make level1
+  PROVIDER_SPEC=<mt-landvault-api provider openapi/swagger.yaml>` must show no ERROR-level breaking
+  changes for the touched surfaces. Level-2 (schemathesis vs a running backend) requires
+  BACKEND_URL/BACKEND_AUTH not available in this session — out of scope for this dispatch; note as a
+  follow-up verification step for whoever has staging credentials.
+status: open
+status_history:
+  - status: open
+    timestamp: '2026-07-14T18:40:51.091Z'
+    by: system
+what_to_resolve: >-
+  The discover-pod consumer contract (consumer-openapi.yaml), coverage-matrix.md, and
+  verify-consumer-openapi.mjs are updated to match the REAL merged mt-landvault-api backend (main @
+  8f5fac6 / PR #148 @ 257f720) on both: (A) the analytes `scale` query parameter default (add
+  `default: absolute` to match the provider), and (B) the inverse-targeting clause shape (snake_case
+  field names, no `direction` field, `computed_thresholds`/`target_match_percent` replacing
+  top-level `solvedThreshold`, new `analyteAverages`/`nonMatchingAnalyteAverages`, and residue
+  documentation reflecting the real first-wins multiplicity behavior instead of an unimplemented
+  rejection rule). Contract version bumped. `make verify-spec` passes. `make level1` run locally
+  against the real provider spec shows the two identified drifts resolved. David reviews and
+  freezes; lands via PR to contracts main.
+impact: critical
+impact_note: >-
+  Confirmed BLOCKING: landvault-shell PR #256 (initiative/iteration-2026-07) has a failing Level-1
+  Contract Gate (gh run 29356475683, 2026-07-14), which per ADR-0058 is a hard automated gate with
+  no implicit bypass — it blocks this PR (and the whole iteration-2026-07 shell integration branch)
+  from reaching staging/main until reconciled.
+related:
+  - DATA-2026-0088
+  - DATA-2026-0094
+  - DATA-2026-0095
+  - SHELL-2026-0815
+  - SHELL-2026-0825
+  - SHELL-2026-0828
+  - SHELL-2026-0833
+  - SHELL-2026-0701
+dependencies:
+  - CCT-2026-0014
+tasks:
+  - id: t1
+    description: >-
+      Add default: absolute to the scale query parameter schema on GET /areal/analytes/{analyteId}
+      in consumer-openapi.yaml, matching the real provider default (api/api.go:242).
+    status: open
+    priority: must-have
+    type: fix
+  - id: t2
+    description: >-
+      Realign the inverse-targeting clause to the real merged backend: rename
+      fieldMatchPercent->field_match_percent and fieldOptimized->field_optimized (snake_case),
+      remove the direction field entirely (op carries direction), keep threshold required/present on
+      the optimized clause.
+    status: open
+    priority: must-have
+    type: fix
+  - id: t3
+    description: >-
+      Replace the top-level solvedThreshold response field with the real shape: add
+      computed_thresholds (map[string]float64 keyed by analyte) and target_match_percent to
+      SuitabilityData; document the query.criteria[].clauses[].threshold echo as the aliasing side
+      effect it really is (ref DATA-2026-0095).
+    status: open
+    priority: must-have
+    type: fix
+  - id: t4
+    description: >-
+      Add per-region analyteAverages and nonMatchingAnalyteAverages (map[string]float64) to
+      SuitabilityResult, for both measured and predicted.
+    status: open
+    priority: must-have
+    type: feat
+  - id: t5
+    description: >-
+      Update coverage-matrix.md tier-5 residue rows (R6/R7) to document the real first-wins
+      multiplicity behavior (no >1 rejection exists) instead of the aspirational MUST-reject-400
+      rule; reference DATA-2026-0094 as the open upstream question.
+    status: open
+    priority: must-have
+    type: docs
+  - id: t6
+    description: >-
+      Update verify-consumer-openapi.mjs assertions (REQUIRED_REQ_TAGS + structural checks) for the
+      new field names/shapes; bump the contract version.
+    status: open
+    priority: must-have
+    type: chore
+  - id: t7
+    description: >-
+      Run make verify-spec and make level1 (PROVIDER_SPEC pointed at the real mt-landvault-api
+      provider spec) locally; confirm both drifts are resolved.
+    status: open
+    priority: must-have
+    type: test
+id: CCT-2026-0016

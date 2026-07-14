@@ -342,83 +342,139 @@ check('C8-benchmark-ref',
   '§3.6 BenchmarkRef / benchmarkApplied present');
 
 // ---------------------------------------------------------------------------
-// C9 — REQ-RULE-INVERSE inverse-targeting clause (SPEC §3.4.1).
-//   STRUCTURAL assertions (not mere token presence): the additive fields sit on
-//   the correct schemas, with the correct defaults/enums/multiplicity, and the
-//   >1-optimized-clause rejection is DOCUMENTED (not structurally enforced — it is
-//   a cross-field cardinality rule JSON Schema cannot express) on a 400 path.
+// C9 — REQ-RULE-INVERSE inverse-targeting clause (SPEC §3.4.1), reconciled to
+//   the REAL merged backend in CCT-2026-0016 (mt-landvault-api main @ 8f5fac6,
+//   PR #148). STRUCTURAL assertions (not mere token presence): the additive
+//   fields sit on the correct schemas, snake_case per the real backend, with
+//   op/threshold unconditionally required (no direction field, no if/then/else),
+//   and the zero-optimized-clause rejection is DOCUMENTED on a 400 path — the
+//   >1-optimized-clause case is NOT a rejection (first-wins, DATA-2026-0094).
 // ---------------------------------------------------------------------------
 {
   const suitReq = schemas.SuitabilityRequest ?? {};
   const clause = schemas.Clause ?? {};
   const suitData = schemas.SuitabilityData ?? {};
   const suitRegion = schemas.SuitabilityRegion ?? {};
+  const suitMeasured = schemas.SuitabilityMeasured ?? {};
+  const suitPredicted = schemas.SuitabilityPredicted ?? {};
 
-  // (a) fieldMatchPercent is a SuitabilityRequest property, NOT an operation parameter.
-  const fmpIsReqProp = !!suitReq.properties?.fieldMatchPercent;
+  // (a) field_match_percent is a SuitabilityRequest property, NOT an operation
+  //     parameter, and NOT the old camelCase name.
+  const fmpIsReqProp = !!suitReq.properties?.field_match_percent;
+  const fmpOldCamelCase = !!suitReq.properties?.fieldMatchPercent;
   let fmpIsOpParam = false;
   for (const [p, item] of Object.entries(paths)) {
     for (const m of ['get', 'post', 'put', 'patch', 'delete']) {
       if (item && item[m]) {
         const ps = collectParams(paths, p, item[m]);
-        if (ps.some((x) => x && x.name === 'fieldMatchPercent')) fmpIsOpParam = true;
+        if (ps.some((x) => x && x.name === 'field_match_percent')) fmpIsOpParam = true;
       }
     }
   }
   check('C9-fieldMatchPercent-req-prop',
-    fmpIsReqProp && !fmpIsOpParam,
-    `§3.4.1 fieldMatchPercent is a SuitabilityRequest property (${fmpIsReqProp}) and NOT an operation-level query parameter (op-param: ${fmpIsOpParam})`);
+    fmpIsReqProp && !fmpOldCamelCase && !fmpIsOpParam,
+    `§3.4.1 field_match_percent is a SuitabilityRequest property (${fmpIsReqProp}), no stale camelCase alias (fieldMatchPercent present: ${fmpOldCamelCase}), and NOT an operation-level query parameter (op-param: ${fmpIsOpParam})`);
 
-  // (b) fieldOptimized is a Clause property, boolean, default false.
-  const fo = clause.properties?.fieldOptimized;
+  // (a2) field_match_percent type/range: number, minimum 1, maximum 100
+  //      (confirmed against types/suitability/types.go ValidateFieldMatchPercent).
+  const fmp = suitReq.properties?.field_match_percent;
+  check('C9-fieldMatchPercent-type-range',
+    !!fmp && fmp.type === 'number' && fmp.minimum === 1 && fmp.maximum === 100,
+    `§3.4.1 field_match_percent is type:number, minimum:1, maximum:100 (type: ${JSON.stringify(fmp?.type)}, minimum: ${JSON.stringify(fmp?.minimum)}, maximum: ${JSON.stringify(fmp?.maximum)})`);
+
+  // (a3) analytesOfInterest is a SuitabilityRequest property, array of string.
+  const aoi = suitReq.properties?.analytesOfInterest;
+  check('C9-analytesOfInterest-req-prop',
+    !!aoi && aoi.type === 'array',
+    `§3.4.1 analytesOfInterest is a SuitabilityRequest array property (present: ${!!aoi}, type: ${JSON.stringify(aoi?.type)})`);
+
+  // (b) field_optimized is a Clause property, boolean, default false, snake_case
+  //     (no stale camelCase alias).
+  const fo = clause.properties?.field_optimized;
+  const foOldCamelCase = !!clause.properties?.fieldOptimized;
   check('C9-fieldOptimized-clause-default',
-    !!fo && fo.type === 'boolean' && fo.default === false,
-    `§3.4.1 Clause.fieldOptimized present, boolean, default:false (present: ${!!fo}, type: ${JSON.stringify(fo?.type)}, default: ${JSON.stringify(fo?.default)})`);
+    !!fo && fo.type === 'boolean' && fo.default === false && !foOldCamelCase,
+    `§3.4.1 Clause.field_optimized present, boolean, default:false, no stale camelCase alias (present: ${!!fo}, type: ${JSON.stringify(fo?.type)}, default: ${JSON.stringify(fo?.default)}, fieldOptimized-alias-present: ${foOldCamelCase})`);
 
-  // (c) direction is a Clause property, enum ⊇ {top,bottom}, default "top".
-  const dir = clause.properties?.direction;
-  const dirEnum = dir?.enum ?? [];
-  check('C9-direction-clause-enum-default',
-    !!dir && dirEnum.includes('top') && dirEnum.includes('bottom') && dir.default === 'top',
-    `§3.4.1 Clause.direction present, enum⊇{top,bottom}, default "top" (enum: ${JSON.stringify(dirEnum)}, default: ${JSON.stringify(dir?.default)})`);
+  // (c) direction MUST NOT exist anywhere — it was removed entirely; op is the
+  //     sole carrier of comparison direction (confirmed against
+  //     sql/suitability/percentile_measured.go CalculatePercentile).
+  const dirOnClause = !!clause.properties?.direction;
+  check('C9-direction-removed',
+    !dirOnClause,
+    `§3.4.1 Clause.direction does NOT exist (removed — op carries direction) (present: ${dirOnClause})`);
 
-  // (d) solvedThreshold is a SuitabilityData property, NOT in its required, and NOT
-  //     present on SuitabilityRegion or any clause object.
-  const stOnData = !!suitData.properties?.solvedThreshold;
-  const stInDataRequired = Array.isArray(suitData.required) && suitData.required.includes('solvedThreshold');
-  const stOnRegion = !!suitRegion.properties?.solvedThreshold;
-  const stOnClause = !!clause.properties?.solvedThreshold;
+  // (d) computed_thresholds is a SuitabilityData property, an OPEN map
+  //     (additionalProperties: {type: number}), NOT in required, and NOT
+  //     present on SuitabilityRegion or Clause. target_match_percent is a
+  //     number, also on SuitabilityData, also NOT required. The retired
+  //     solvedThreshold scalar MUST NOT be present anywhere.
+  const ct = suitData.properties?.computed_thresholds;
+  const ctIsOpenMap = !!ct && ct.type === 'object' && ct.additionalProperties?.type === 'number';
+  const ctInDataRequired = Array.isArray(suitData.required) && suitData.required.includes('computed_thresholds');
+  const ctOnRegion = !!suitRegion.properties?.computed_thresholds;
+  const ctOnClause = !!clause.properties?.computed_thresholds;
+  const tmp = suitData.properties?.target_match_percent;
+  const tmpInDataRequired = Array.isArray(suitData.required) && suitData.required.includes('target_match_percent');
+  const solvedThresholdAnywhere =
+    !!suitData.properties?.solvedThreshold || !!suitRegion.properties?.solvedThreshold || !!clause.properties?.solvedThreshold;
   check('C9-solvedThreshold-placement',
-    stOnData && !stInDataRequired && !stOnRegion && !stOnClause,
-    `§3.4.1 solvedThreshold on SuitabilityData (${stOnData}), NOT in its required (${stInDataRequired}), NOT on SuitabilityRegion (${stOnRegion}) or Clause (${stOnClause})`);
+    ctIsOpenMap && !ctInDataRequired && !ctOnRegion && !ctOnClause &&
+    !!tmp && tmp.type === 'number' && !tmpInDataRequired &&
+    !solvedThresholdAnywhere,
+    `§3.4.1 computed_thresholds open map on SuitabilityData (open-map: ${ctIsOpenMap}), NOT in its required (${ctInDataRequired}), NOT on SuitabilityRegion (${ctOnRegion}) or Clause (${ctOnClause}); target_match_percent number on SuitabilityData (${!!tmp}), NOT required (${tmpInDataRequired}); retired solvedThreshold scalar absent everywhere (stale-present: ${solvedThresholdAnywhere})`);
 
-  // (e) A1: op/threshold are relaxed CONDITIONALLY (if/then/else on fieldOptimized),
-  //     so the forward contract still requires op+threshold and the optimized clause
-  //     does not carry dummy op/threshold. Assert the conditional exists AND the
-  //     forward branch (else) still requires op+threshold.
-  const elseReq = clause.else?.required ?? [];
-  const hasConditional =
-    !!clause.if && !!clause.else &&
-    elseReq.includes('op') && elseReq.includes('threshold') &&
-    !(Array.isArray(clause.required) && (clause.required.includes('op') || clause.required.includes('threshold')));
-  check('C9-clause-conditional-required',
-    hasConditional,
-    `§3.4.1/A1 Clause requires op+threshold only via if/else on fieldOptimized (if: ${!!clause.if}, else.required: ${JSON.stringify(elseReq)}, unconditional required: ${JSON.stringify(clause.required)})`);
+  // (d2) analyteAverages / nonMatchingAnalyteAverages are OPEN maps on both
+  //      SuitabilityMeasured and SuitabilityPredicted (shared backend type).
+  for (const [schemaName, sch] of [['SuitabilityMeasured', suitMeasured], ['SuitabilityPredicted', suitPredicted]]) {
+    const aa = sch.properties?.analyteAverages;
+    const nmaa = sch.properties?.nonMatchingAnalyteAverages;
+    const aaOk = !!aa && aa.type === 'object' && aa.additionalProperties?.type === 'number';
+    const nmaaOk = !!nmaa && nmaa.type === 'object' && nmaa.additionalProperties?.type === 'number';
+    check(`C9-analyteAverages-openmap-${schemaName}`,
+      aaOk && nmaaOk,
+      `§3.4.1 ${schemaName}.analyteAverages/.nonMatchingAnalyteAverages are open maps (additionalProperties: number) (analyteAverages-ok: ${aaOk}, nonMatchingAnalyteAverages-ok: ${nmaaOk})`);
+  }
 
-  // (f) >1 optimized-clause rejection DOCUMENTED on the getArealSuitability 400 path.
+  // (e) A1 (reconciled): op/threshold are UNCONDITIONALLY required on every
+  //     Clause — no if/then/else. Assert both: no conditional construct
+  //     remains, AND analyte+op+threshold are all in the plain `required` list.
+  const hasNoConditional = !clause.if && !clause.then && !clause.else;
+  const reqList = Array.isArray(clause.required) ? clause.required : [];
+  const unconditionallyRequired =
+    reqList.includes('analyte') && reqList.includes('op') && reqList.includes('threshold');
+  check('C9-clause-unconditional-required',
+    hasNoConditional && unconditionallyRequired,
+    `§3.4.1/A1 Clause requires analyte+op+threshold unconditionally, no if/then/else (no-conditional: ${hasNoConditional}, required: ${JSON.stringify(reqList)})`);
+
+  // (f) Zero-optimized-clause rejection IS documented on the getArealSuitability
+  //     400 path (confirmed real: ValidateFieldMatchPercent). The >1-optimized-
+  //     clause case must NOT be documented as a rejection — it must instead be
+  //     documented as first-wins (DATA-2026-0094), so we assert the 400
+  //     description does NOT claim a multi-clause rejection rule.
   const op = findOp('GET', '/areal/suitability');
-  let rejDocumented = false;
+  let zeroRejDocumented = false;
+  let wronglyClaimsMultiRejection = false;
   if (op) {
     const r400 = op.op.responses?.['400'];
     const desc = String(r400?.description ?? '');
-    rejDocumented =
-      !!r400 &&
-      /fieldOptimized/.test(desc) &&
-      /(more than one|multiple|>\s*1|single-variable)/i.test(desc);
+    zeroRejDocumented = !!r400 && /field_optimized/.test(desc) && /zero/i.test(desc);
+    wronglyClaimsMultiRejection =
+      /(more than one|multiple).{0,80}(field_optimized|fieldOptimized).{0,60}MUST be rejected/i.test(desc);
   }
-  check('C9-multi-optimized-400',
-    rejDocumented,
-    '§3.4.1 the >1 fieldOptimized:true clause rejection is documented on the getArealSuitability 400 response');
+  check('C9-zero-optimized-400',
+    zeroRejDocumented,
+    '§3.4.1 the zero-field_optimized-clause-with-field_match_percent rejection is documented on the getArealSuitability 400 response');
+  check('C9-multi-optimized-not-rejected',
+    !wronglyClaimsMultiRejection,
+    '§3.4.1 the 400 response does NOT claim a >1 field_optimized:true clause rejection rule (real behavior is first-wins, DATA-2026-0094 — not a rejection)');
+
+  // (g) First-wins multiplicity behavior (DATA-2026-0094) is documented
+  //     somewhere in the document (Clause.field_optimized description or
+  //     coverage-matrix-style residue note embedded in the spec).
+  check('C9-first-wins-documented',
+    /DATA-2026-0094/.test(docText) && /first/i.test(docText),
+    '§3.4.1 the first-wins multiplicity behavior for >1 field_optimized:true clauses is documented, referencing DATA-2026-0094');
 }
 
 // ---------------------------------------------------------------------------

@@ -55,3 +55,9 @@
     Open, high impact: publish mt-landvault-temp's provider-owned OpenAPI contract here, closing the
     no-contract gap the mt-landvault-api BFF-extraction initiative exists to fix. Part of
     plan-2026-0001.
+- id: CCT-2026-0016
+  rationale: >-
+    Critical, blocking: landvault-shell PR #256 Level-1 Contract Gate is failing (confirmed via live
+    CI run + local repro). Reconciles the discover-pod contract to the real merged mt-landvault-api
+    backend post PR #148: analytes scale default (the actual gate blocker) + inverse-clause realign
+    (CCT-2026-0014 diverged from what shipped).

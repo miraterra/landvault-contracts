@@ -21,7 +21,7 @@ openapi: 3.1.0
 
 info:
   title: Discover Pod — Areal Query API (consumer-required contract)
-  version: 0.3.0
+  version: 0.4.0
   description: >
     Consumer-required contract for the county-level data-layer (areal) map.
     Derived from the normative SPEC.md §3 (data model + endpoints) and §4
@@ -135,10 +135,16 @@ paths:
         - name: scale
           in: query
           required: false
-          description: absolute | benchmark (SPEC §3.2/§3.6; benchmark drives benchmarkApplied).
+          description: >-
+            absolute | benchmark (SPEC §3.2/§3.6; benchmark drives benchmarkApplied).
+            Defaults to absolute (confirmed provider default, mt-landvault-api
+            api/api.go:242 `@Param scale ... default(absolute)`); when scale is
+            omitted or anything other than literally "benchmark" the backend falls
+            through to absolute behavior (api/api.go:251,258,288).
           schema:
             type: string
             enum: [absolute, benchmark]
+            default: absolute
         - name: crop
           in: query
           required: false
@@ -194,19 +200,32 @@ paths:
               schema:
                 $ref: '#/components/schemas/SuitabilityEnvelope'
               example:
-                # INVERSE-TARGETING response (REQ-RULE-INVERSE, SPEC §3.4.1) — seeds
-                # the Prism mock so the Discover map renders plausibly for the demo.
-                # fieldMatchPercent 25 back-solved to solvedThreshold 2.82 (%OC);
-                # matching fields aggregated by county (plausible Iowa FIPS ids).
-                contractVersion: "0.3.0"
+                # INVERSE-TARGETING response (REQ-RULE-INVERSE, SPEC §3.4.1), reconciled
+                # to the real merged backend (mt-landvault-api main @ 8f5fac6, PR #148).
+                # field_match_percent 25 back-solved to computed_thresholds["soil-organic-carbon"]
+                # = 2.82 (%OC); matching fields aggregated by county (plausible Iowa FIPS ids).
+                # The solved threshold is also echoed into query.criteria[].clauses[].threshold
+                # for the solved clause — a real aliasing side effect (DATA-2026-0095), not a
+                # designed contract element.
+                contractVersion: "0.4.0"
                 generatedAt: "2026-07-13T12:00:00Z"
                 query:
                   source: measured
                   crop: corn
-                  fieldMatchPercent: 25
+                  field_match_percent: 25
+                  criteria:
+                    - id: carbon-target
+                      weight: 1.0
+                      clauses:
+                        - analyte: soil-organic-carbon
+                          op: ">="
+                          threshold: 2.82
+                          field_optimized: true
                 data:
                   ratingThresholds: [0.30, 0.70]
-                  solvedThreshold: 2.82
+                  computed_thresholds:
+                    soil-organic-carbon: 2.82
+                  target_match_percent: 25
                   regions:
                     - regionId: "19153"      # Polk County, IA
                       measured:
@@ -217,6 +236,10 @@ paths:
                             matchingFields: 79
                             totalFields: 188
                             density: 0.42
+                        analyteAverages:
+                          soil-organic-carbon: 3.1
+                        nonMatchingAnalyteAverages:
+                          soil-organic-carbon: 1.4
                     - regionId: "19169"      # Story County, IA
                       measured:
                         suppressed: false
@@ -226,6 +249,10 @@ paths:
                             matchingFields: 30
                             totalFields: 120
                             density: 0.25
+                        analyteAverages:
+                          soil-organic-carbon: 2.9
+                        nonMatchingAnalyteAverages:
+                          soil-organic-carbon: 1.2
                     - regionId: "19013"      # Black Hawk County, IA
                       measured:
                         suppressed: false
@@ -235,19 +262,28 @@ paths:
                             matchingFields: 8
                             totalFields: 72
                             density: 0.11
+                        analyteAverages:
+                          soil-organic-carbon: 2.85
+                        nonMatchingAnalyteAverages:
+                          soil-organic-carbon: 1.1
         '400':
           description: >
             Rejected request (provider-observed; ErrorResponse body). Covers a missing
             or malformed `request` param (e.g. criteria not an array) AND the
-            INVERSE-TARGETING rejection rules (REQ-RULE-INVERSE, SPEC §3.4.1). A
-            request with MORE THAN ONE fieldOptimized:true clause MUST be rejected
-            (single-variable solve only, v1). PROVISIONAL (SPEC §3.4.2 item #9): under
-            the current working assumption, a request carrying fieldMatchPercent with
-            ZERO fieldOptimized:true clauses is rejected as out-of-scope for v1
-            (nothing to solve) — a product choice to confirm at the demo, not a frozen
-            rule. These cross-field cardinality rules are NOT expressible in JSON
-            Schema (see coverage-matrix.md tier-5 residue R6/R7); this 400 path is
-            their rejection channel.
+            INVERSE-TARGETING rejection rule (REQ-RULE-INVERSE, SPEC §3.4.1): a request
+            carrying `field_match_percent` with ZERO `field_optimized:true` clauses IS
+            rejected (confirmed: types/suitability/types.go ValidateFieldMatchPercent
+            — "field_match_percent requires at least one clause with field_optimized:
+            true"). A request with MORE THAN ONE `field_optimized:true` clause is NOT
+            rejected — the real backend silently solves only the FIRST such clause and
+            evaluates every subsequent one with its literal, client-supplied (unsolved)
+            threshold (confirmed:
+            datasets/suitability/suitability_test.go
+            TestUpdateClauseThreshold_OnlyUpdatesFirstMatch). This first-wins
+            multiplicity behavior is an open, undecided design gap upstream
+            (DATA-2026-0094), not a rejection rule. The "at least one optimized clause"
+            cardinality rule is NOT expressible in JSON Schema (see coverage-matrix.md
+            tier-5 residue R6/R7); this 400 path is its rejection channel.
           content:
             application/json:
               schema:
@@ -699,9 +735,9 @@ components:
             which benchmark values to use for percent-mode comparisons. The backend
             resolves the name to a database UUID and uses a 4-tier fallback:
             regional+crop, national+crop, regional+OTHER, national+OTHER.
-        fieldMatchPercent:
-          type: integer
-          minimum: 0
+        field_match_percent:
+          type: number
+          minimum: 1
           maximum: 100
           x-req: REQ-RULE-INVERSE
           x-spec-section: "§3.4.1"
@@ -709,27 +745,48 @@ components:
           description: >
             INVERSE TARGETING (REQ-RULE-INVERSE, SPEC §3.4.1). Top-level, additive,
             OPTIONAL. The target: the percentage of the ranked FIELD POPULATION the
-            user wants to fall in the selected direction. Its presence marks this
-            request as an inverse-targeting request — the backend back-solves the
-            analyte threshold (on the single fieldOptimized clause) that yields this
-            field pass-rate, aggregates matching fields BY COUNTY, and returns today's
-            suitability response shape plus the one solved threshold (solvedThreshold
-            on the response data). Absent ⇒ ordinary forward flow (§3.4), unchanged.
+            user wants to fall on the passing side of the comparison. Its presence
+            marks this request as an inverse-targeting request — the backend
+            back-solves the analyte threshold (on the first `field_optimized:true`
+            clause) that yields this field pass-rate, aggregates matching fields BY
+            COUNTY, and returns today's suitability response shape plus the solved
+            threshold (`computed_thresholds` + `target_match_percent` on the response
+            data). Absent ⇒ ordinary forward flow (§3.4), unchanged.
+
+            Field name, type, and range are CONFIRMED against the real merged backend
+            (mt-landvault-api types/suitability/constants.go `field_match_percent
+            *float64 json:"field_match_percent,omitempty"`; types/suitability/types.go
+            `ValidateFieldMatchPercent` enforces 1–100 inclusive, 400 otherwise) — this
+            is snake_case, `number` (not integer), minimum 1 (not 0), maximum 100. No
+            camelCase alias exists.
 
             DISTINCT from clause `mode: "percent"` / `threshold` (REQ-RULE-RESULT,
-            §3.4): fieldMatchPercent is a percentage of the ranked FIELD POPULATION
+            §3.4): field_match_percent is a percentage of the ranked FIELD POPULATION
             (how many fields pass), which is ORTHOGONAL to `mode: "percent"` — a
             percentage of a benchmark VALUE. It is also unrelated to the §7-G
             statistical quantile fields (q1/q3/median) carried on aggregate records:
             this is a targeting input, not a distribution summary.
 
-            PROVISIONAL (SPEC §3.4.2). Two provisional items ride on this field: (1)
-            "N% of what?" — the field population it ranges over (assumption #1, HIGH
-            RISK, to be surfaced and validated FIRST at the demo before the inverse
-            mechanism is frozen); and (8) the type/range (working assumption: integer
-            in the closed range 0–100). Both are product choices to confirm at the
-            demo, NOT frozen rules — a post-demo revision to population semantics or
-            type/range reads as anticipated stabilization, not a breaking change.
+            PROVISIONAL (SPEC §3.4.2, item #1 only — item #8 type/range is now
+            CONFIRMED, see above): "N% of what?" — the field population it ranges
+            over (HIGH RISK, to be surfaced and validated FIRST at the demo before
+            the inverse mechanism is frozen) remains a product choice to confirm, NOT
+            a frozen rule — a post-demo revision to population semantics reads as
+            anticipated stabilization, not a breaking change.
+        analytesOfInterest:
+          type: array
+          items:
+            type: string
+          x-req: REQ-RULE-INVERSE
+          x-spec-section: "§3.4.1"
+          description: >
+            Additional analytes (camelCase per backend; confirmed
+            types/suitability/constants.go `AnalytesOfInterest []string
+            json:"analytesOfInterest,omitempty"`) for which the backend computes
+            `analyteAverages`/`nonMatchingAnalyteAverages` on the suitability result.
+            NOT used in criteria filtering — this is the real, wired control surface
+            for which extra analytes populate the two average maps. Optional,
+            additive.
         criteria:
           type: array
           items:
@@ -737,16 +794,21 @@ components:
       example:
         source: measured
         crop: corn
-        fieldMatchPercent: 25
+        field_match_percent: 25
         criteria:
           - id: carbon-target
             weight: 1.0
             clauses:
-              # INVERSE clause: op/threshold OMITTED (solved for, not sent as
-              # dummy values — SPEC §3.4.1 / A1); direction carries the direction.
+              # INVERSE clause: op/threshold are ALWAYS required, even here — the
+              # client supplies a placeholder (e.g. 0) that the backend overwrites
+              # in place with the solved value (SPEC §3.4.1; confirmed
+              # datasets/suitability/suitability.go updateClauseThreshold). op
+              # carries the comparison direction; there is no separate `direction`
+              # field in the real backend.
               - analyte: soil-organic-carbon
-                fieldOptimized: true
-                direction: top
+                op: ">="
+                threshold: 0
+                field_optimized: true
 
     Criterion:
       type: object
@@ -768,91 +830,94 @@ components:
     Clause:
       type: object
       description: >
-        One clause (SPEC §3.4 / §3.4.1). FORWARD (REQ-RULE-RESULT): analyte + op +
-        threshold (+ optional mode); the user supplies the threshold and the backend
-        reports which share of each county's fields match. When mode is "percent", the
+        One clause (SPEC §3.4 / §3.4.1). `analyte` + `op` + `threshold` (+ optional
+        `mode`) are ALWAYS required and ALWAYS present, on every clause, with no
+        exception for inverse-targeting clauses (confirmed against the real merged
+        backend: types/suitability/constants.go Clause.Op / Clause.Threshold carry no
+        `omitempty` and no conditional-required logic exists server-side). FORWARD
+        (REQ-RULE-RESULT): the user supplies the threshold and the backend reports
+        which share of each county's fields match. When mode is "percent", the
         threshold represents a percentage of the high_benchmark (0-300). INVERSE
-        (REQ-RULE-INVERSE, SPEC §3.4.1): setting fieldOptimized:true marks this as the
-        single clause whose threshold the backend SOLVES for; on that clause `op` and
-        `threshold` are IGNORED (they are NOT sent as dummy values — see the
-        conditional `required` below), and `direction` is the SOLE carrier of
-        comparison direction. `fieldOptimized` and `mode` are ORTHOGONAL (§3.4.1):
-        fieldOptimized governs "solve vs given", while `mode` keeps its existing
-        value-semantics (including the units solvedThreshold is reported in).
+        (REQ-RULE-INVERSE, SPEC §3.4.1): setting `field_optimized:true` marks this as
+        the clause whose threshold the backend SOLVES for — the client still sends
+        `op` and a `threshold` placeholder (e.g. 0), and the backend overwrites
+        `threshold` IN PLACE with the solved value (confirmed:
+        datasets/suitability/suitability.go `updateClauseThreshold`); `op` and
+        `threshold` are NEVER ignored, they are always present and load-bearing. There
+        is no separate `direction` field — comparison direction is carried solely by
+        `op` (confirmed: sql/suitability/percentile_measured.go `CalculatePercentile`
+        branches on `op` `>=`/`>` vs `<=`/`<`, no direction concept exists).
+        `field_optimized` and `mode` are ORTHOGONAL (§3.4.1): `field_optimized` governs
+        "solve vs given", while `mode` keeps its existing value-semantics (including
+        the units the solved threshold is reported in).
       x-req: REQ-RULE-RESULT
       x-spec-section: "§3.4"
-      required: [analyte]
+      required: [analyte, op, threshold]
       properties:
         analyte:
           type: string
         op:
           type: string
           description: >
-            Comparison operator (SPEC §3.4 example uses ">="). Required on a FORWARD
-            clause; IGNORED on a fieldOptimized:true clause (§3.4.1 — direction carries
-            the direction there).
-          enum: [">=", "<=", "<", ">"]
+            Comparison operator (SPEC §3.4 example uses ">="). Required and always
+            present on every clause, including a field_optimized:true clause — op is
+            the sole carrier of comparison direction there (confirmed:
+            sql/suitability/percentile_measured.go CalculatePercentile). Five values
+            are recognized by the real backend (sanitizeOperator,
+            sql/suitability/query_measured.go); any other string is silently coerced
+            to ">=" server-side. Note: on a field_optimized:true clause specifically,
+            "=" causes the backend's separate threshold-solving switch
+            (CalculatePercentile) to fall back to a median solve rather than an
+            exact percentile match — a backend-internal inconsistency, not a
+            wire-contract concern.
+          enum: [">=", "<=", "<", ">", "="]
         threshold:
           type: number
           description: >
             The comparison value. When mode=absolute, this is compared directly
             against the analyte value. When mode=percent, this represents a
-            percentage of the high_benchmark (0-300). Required on a FORWARD clause;
-            IGNORED on a fieldOptimized:true clause (§3.4.1 — the backend solves for
-            it and reports it as solvedThreshold).
+            percentage of the high_benchmark (0-300). Required and always present on
+            every clause. On a field_optimized:true clause this is the client-supplied
+            placeholder (e.g. 0) that the backend overwrites IN PLACE with the solved
+            value (confirmed: datasets/suitability/suitability.go
+            updateClauseThreshold) — never omitted, never ignored. The solved value is
+            also surfaced independently via SuitabilityData.computed_thresholds.
         mode:
           type: string
           description: >
             How to interpret the threshold. "absolute" compares against the raw
             analyte value; "percent" compares against a percentage of the
             high_benchmark. Defaults to "absolute" for backwards compatibility.
-            Orthogonal to fieldOptimized (SPEC §3.4.1).
+            Orthogonal to field_optimized (SPEC §3.4.1).
           enum: [absolute, percent]
           default: absolute
-        fieldOptimized:
+        field_optimized:
           type: boolean
           default: false
           x-req: REQ-RULE-INVERSE
           x-spec-section: "§3.4.1"
           description: >
             INVERSE TARGETING (REQ-RULE-INVERSE, SPEC §3.4.1). Per-clause, additive.
-            Marks the single clause whose threshold the backend back-solves from the
-            top-level fieldMatchPercent. Default false ⇒ the forward flow is untouched
-            (a request with no optimized clause behaves exactly as it does today).
-            EXACTLY ONE clause per request MAY set this true (single-variable solve,
-            v1). On a true clause `op` and `threshold` are IGNORED and `direction` is
-            the sole direction carrier. The "exactly one true" cardinality and the
-            zero-optimized-clause rule are cross-field rules JSON Schema CANNOT express
-            — they are enforced server-side and rejected via the getArealSuitability
-            400 path (see coverage-matrix.md tier-5 residue R6/R7).
-        direction:
-          type: string
-          enum: [top, bottom]
-          default: top
-          x-req: REQ-RULE-INVERSE
-          x-spec-section: "§3.4.1"
-          description: >
-            INVERSE TARGETING (REQ-RULE-INVERSE, SPEC §3.4.1). Per-clause, additive.
-            Meaningful only on the fieldOptimized clause, where it is the SOLE carrier
-            of comparison direction (op is ignored there). "top" (default) solves the
-            threshold so the highest-passing fieldMatchPercent% of the ranked
-            population passes; "bottom" selects the lowest-passing. This is a selection
-            direction — NOT a statistical quartile/whisker bin (§7-G).
-      # A1 (SPEC §3.4.1): op/threshold are required ONLY on a FORWARD clause. On a
-      # fieldOptimized:true clause they are IGNORED and MUST NOT be sent as dummy
-      # values, so they are NOT required there — `direction` carries the direction.
-      # OpenAPI 3.1 (JSON Schema 2020-12) if/then/else expresses this without
-      # disturbing the forward contract: absent/false fieldOptimized ⇒ else branch ⇒
-      # analyte+op+threshold required, exactly as before this clause was added.
-      if:
-        required: [fieldOptimized]
-        properties:
-          fieldOptimized:
-            const: true
-      then:
-        required: [analyte]
-      else:
-        required: [analyte, op, threshold]
+            Snake_case per the real backend (confirmed:
+            types/suitability/constants.go `field_optimized`; no camelCase alias
+            exists). Default false ⇒ the forward flow is untouched (a request with no
+            optimized clause behaves exactly as it does today). The backend requires
+            AT LEAST ONE clause to set this true when the top-level
+            `field_match_percent` is present (400 otherwise — confirmed
+            ValidateFieldMatchPercent) but does NOT reject more than one true clause.
+            MULTIPLICITY (confirmed:
+            datasets/suitability/suitability_test.go
+            TestUpdateClauseThreshold_OnlyUpdatesFirstMatch): if more than one clause
+            sets this true, the backend solves and overwrites the threshold on only
+            the FIRST such clause (encountered in criteria/clause declaration order);
+            every subsequent field_optimized:true clause is evaluated in the real
+            filter using its literal, client-supplied (unsolved) threshold — it is NOT
+            simply ignored. This first-wins, silently-unsolved-for-duplicates
+            behavior is an open, undecided design gap upstream (DATA-2026-0094), not
+            a frozen rule. The "at least one" cardinality rule is a cross-field rule
+            JSON Schema CANNOT express — it is enforced server-side and surfaced via
+            the getArealSuitability 400 path (see coverage-matrix.md tier-5 residue
+            R6/R7).
 
     SuitabilityEnvelope:
       description: Envelope whose data is the suitability response (SPEC §3.4).
@@ -885,27 +950,49 @@ components:
             - type: number
           items:
             type: number
-        solvedThreshold:
+        computed_thresholds:
+          type: object
+          additionalProperties:
+            type: number
+          x-req: REQ-RULE-INVERSE
+          x-spec-section: "§3.4.1"
+          description: >
+            INVERSE TARGETING (REQ-RULE-INVERSE, SPEC §3.4.1). Replaces the previously
+            frozen top-level `solvedThreshold` scalar, which does NOT exist in the
+            real merged backend. OPEN MAP keyed by analyte name, value = the back-
+            solved threshold for that analyte (confirmed: api/api.go
+            `data.ComputedThresholds = map[string]float64{computedResult.Analyte:
+            computedResult.Threshold}` — backend type `map[string]float64` on
+            SuitabilityData; NOT a fixed-key object). Reported in ABSOLUTE analyte
+            units (the optimized clause's analyte in its native unit — the same units
+            a forward mode:"absolute" threshold uses). v1 only ever solves ONE
+            clause (first `field_optimized:true` match — see Clause.field_optimized
+            multiplicity note), so this map carries at most one entry today; it is
+            modeled as an open map (not a single scalar) because the backend's own
+            type is a map, keyed by analyte, and a future multi-clause solve would add
+            entries rather than reshape the field. OPTIONAL and additive
+            (NFR-VER-1): present ONLY when the request carried `field_match_percent`
+            and a valid optimized clause, and ABSENT on every forward-flow response —
+            which is why it is deliberately NOT in this schema's `required` list (the
+            forward flow shares SuitabilityData and must not break).
+            `source:"both"` solves the threshold from MEASURED data only (no
+            predicted-specific threshold exists in the backend) — a known limitation,
+            not a gap to fix here. The solved threshold is ALSO echoed back into
+            `query.criteria[].clauses[].threshold` for the one solved clause — a real,
+            observable aliasing side effect of the backend's implementation (Go slice
+            elements shared between the mutated internal copy and the request struct
+            echoed as `query`), not a designed contract element (tracked upstream as
+            DATA-2026-0095).
+        target_match_percent:
           type: number
           x-req: REQ-RULE-INVERSE
           x-spec-section: "§3.4.1"
           description: >
-            INVERSE TARGETING (REQ-RULE-INVERSE, SPEC §3.4.1). The single analyte
-            threshold the backend back-solved so that the top-level fieldMatchPercent%
-            of the ranked field population falls in the requested direction, reported
-            in ABSOLUTE analyte units (the optimized clause's analyte in its native
-            unit — the same units a forward mode:"absolute" threshold uses). A SINGLE
-            top-level scalar because one back-solve population yields one threshold; it
-            is NOT nested per-clause (the suitability response has no clause-level
-            object — see the SuitabilityRegion shape). OPTIONAL and additive
-            (NFR-VER-1): present ONLY when the request carried fieldMatchPercent and a
-            valid optimized clause, and ABSENT on every forward-flow response — which
-            is why it is deliberately NOT in this schema's `required` list (the forward
-            flow shares SuitabilityData and must not break). PROVISIONAL per-source
-            note (SPEC §3.4.1 open item, tied to §3.4.2 assumption #1): v1 reports a
-            single scalar; if the demo confirms per-source solving this may promote to
-            one scalar per source in a follow-up revision (anticipated stabilization,
-            not a breaking change).
+            INVERSE TARGETING (REQ-RULE-INVERSE, SPEC §3.4.1). The echoed
+            `field_match_percent` from the request (confirmed: api/api.go
+            `data.TargetMatchPercent = suitReq.FieldMatchPercent`). OPTIONAL and
+            additive (NFR-VER-1): present only alongside `computed_thresholds`, absent
+            on every forward-flow response.
         regions:
           type: array
           items:
@@ -959,6 +1046,32 @@ components:
           description: Per-criterion breakdown; present when not suppressed (SPEC §3.4).
           items:
             $ref: '#/components/schemas/SuitabilityCriterionResult'
+        analyteAverages:
+          type: object
+          additionalProperties:
+            type: number
+          x-req: REQ-RULE-INVERSE
+          x-spec-section: "§3.4.1"
+          description: >
+            Per-region average value, per analyte, across MATCHING fields (SPEC
+            §3.4.1). OPEN MAP keyed by analyte name (confirmed:
+            datasets/suitability/suitability.go SuitabilityResult.AnalyteAverages
+            `map[string]float64`; NOT a fixed-key object). Populated for the clause
+            analytes and any analytes named in the request's `analytesOfInterest`.
+            Present when not suppressed; absent when suppressed (REQ-STATE-2).
+        nonMatchingAnalyteAverages:
+          type: object
+          additionalProperties:
+            type: number
+          x-req: REQ-RULE-INVERSE
+          x-spec-section: "§3.4.1"
+          description: >
+            Per-region average value, per analyte, across NON-MATCHING fields (SPEC
+            §3.4.1). OPEN MAP keyed by analyte name (confirmed:
+            datasets/suitability/suitability.go
+            SuitabilityResult.NonMatchingAnalyteAverages `map[string]float64`; NOT a
+            fixed-key object). Present when not suppressed; absent when suppressed
+            (REQ-STATE-2).
 
     SuitabilityPredicted:
       type: object
@@ -966,9 +1079,21 @@ components:
         Predicted suitability result for a county (SPEC §3.4). Never suppressed; may
         be absent where there is no prediction. predicted.totalFields = all county
         fields (public property) vs measured.totalFields = fields with samples.
+        `suppressed` is REQUIRED here (always `false`) rather than omitted: the
+        backend's response type (datasets/suitability/suitability.go
+        SuitabilityResult) is SHARED between measured and predicted, and its
+        `Suppressed bool` field carries no `omitempty` — it is therefore always
+        serialized on the wire for a predicted result too, always `false` (predicted
+        is never suppressed). Modeled explicitly rather than left a silent gap.
       x-req: REQ-RULE-RESULT
       x-spec-section: "§3.4"
+      required: [suppressed]
       properties:
+        suppressed:
+          type: boolean
+          description: >
+            Always `false` for a predicted result (predicted is never suppressed) —
+            see schema description for why this is required rather than omitted.
         score:
           type: number
           description: 0–1 (SPEC §3.4).
@@ -978,6 +1103,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SuitabilityCriterionResult'
+        analyteAverages:
+          type: object
+          additionalProperties:
+            type: number
+          x-req: REQ-RULE-INVERSE
+          x-spec-section: "§3.4.1"
+          description: >
+            Per-region average value, per analyte, across MATCHING fields (SPEC
+            §3.4.1). OPEN MAP keyed by analyte name — same shared backend type as
+            SuitabilityMeasured.analyteAverages (SuitabilityResult is shared between
+            measured and predicted; confirmed
+            datasets/suitability/suitability.go).
+        nonMatchingAnalyteAverages:
+          type: object
+          additionalProperties:
+            type: number
+          x-req: REQ-RULE-INVERSE
+          x-spec-section: "§3.4.1"
+          description: >
+            Per-region average value, per analyte, across NON-MATCHING fields (SPEC
+            §3.4.1). OPEN MAP keyed by analyte name — same shared backend type as
+            SuitabilityMeasured.nonMatchingAnalyteAverages (confirmed
+            datasets/suitability/suitability.go).
 
     SuitabilityCriterionResult:
       type: object

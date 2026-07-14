@@ -91,48 +91,100 @@ tasks:
   - id: t2
     description: >-
       Realign the inverse-targeting clause to the real merged backend: rename
-      fieldMatchPercent->field_match_percent and fieldOptimized->field_optimized (snake_case),
-      remove the direction field entirely (op carries direction), keep threshold required/present on
-      the optimized clause.
+      fieldMatchPercent->field_match_percent, fieldOptimized->field_optimized (snake_case). Correct
+      field_match_percent to type:number, minimum:1, maximum:100 (was integer/0, backend is *float64
+      validated 1-100). REMOVE the direction field entirely (op carries direction: >=/<=/</>).
+      REMOVE the if/then/else conditional-required on Clause -- op+threshold are ALWAYS
+      required/present, even on the optimized clause (backend overwrites threshold in place; never
+      omitted). Rewrite the Clause/fieldOptimized description prose: op and threshold are never
+      ignored -- delete the 'op/threshold are IGNORED... direction is the SOLE carrier' language.
     status: open
     priority: must-have
     type: fix
   - id: t3
     description: >-
       Replace the top-level solvedThreshold response field with the real shape: add
-      computed_thresholds (map[string]float64 keyed by analyte) and target_match_percent to
-      SuitabilityData; document the query.criteria[].clauses[].threshold echo as the aliasing side
-      effect it really is (ref DATA-2026-0095).
+      computed_thresholds (open map, additionalProperties: {type: number}, keyed by analyte name --
+      NOT a fixed-key object, backend type is map[string]float64) and target_match_percent (number)
+      to SuitabilityData. Document the query.criteria[].clauses[].threshold echo as the aliasing
+      side effect it really is (ref DATA-2026-0095).
     status: open
     priority: must-have
     type: fix
   - id: t4
     description: >-
-      Add per-region analyteAverages and nonMatchingAnalyteAverages (map[string]float64) to
-      SuitabilityResult, for both measured and predicted.
+      Add per-region analyteAverages and nonMatchingAnalyteAverages as open maps
+      (additionalProperties: {type: number}) to SuitabilityResult, for both measured and predicted.
+      Also add the analytesOfInterest request field (array of string, optional, camelCase per
+      backend) to SuitabilityRequest -- it's the real, wired control surface for which extra
+      analytes populate these two new average maps. While touching SuitabilityPredicted, decide and
+      note whether to add the optional suppressed field there too (backend's shared
+      SuitabilityResult always carries it) or explicitly document the omission -- don't leave it a
+      silent gap.
     status: open
     priority: must-have
     type: feat
   - id: t5
     description: >-
-      Update coverage-matrix.md tier-5 residue rows (R6/R7) to document the real first-wins
-      multiplicity behavior (no >1 rejection exists) instead of the aspirational MUST-reject-400
-      rule; reference DATA-2026-0094 as the open upstream question.
+      Sweep ALL of coverage-matrix.md's inverse-targeting references, not just tier-5 residue rows
+      -- sections 2 (schema-coverage), 4 (REQ-* census), 7.1 (element-mapping table), 7.2
+      (distinctness), 7.3 (granularity), and 7.5 (provisional markers) all name the old
+      fieldMatchPercent/fieldOptimized/direction/solvedThreshold shape and must be updated to
+      field_match_percent/field_optimized/computed_thresholds/target_match_percent/analyteAverages/nonMatchingAnalyteAverages.
+      Section 7.5 currently states camelCase SPEC names are authoritative over snake_case -- replace
+      with: the backend's snake_case fields (PR #148, mt-landvault-api main @ 8f5fac6) are the
+      confirmed real shape. Rewrite residue rows R6/R7 to document the REAL first-wins multiplicity
+      behavior: the backend does not reject >1 field_optimized:true clauses: it solves only the
+      FIRST match, and every subsequent field_optimized:true clause is evaluated in the real filter
+      using its literal, client-supplied (unsolved) threshold -- not simply ignored. Reference
+      DATA-2026-0094 as the open upstream question.
     status: open
     priority: must-have
     type: docs
   - id: t6
     description: >-
-      Update verify-consumer-openapi.mjs assertions (REQUIRED_REQ_TAGS + structural checks) for the
-      new field names/shapes; bump the contract version.
+      Update verify-consumer-openapi.mjs C9 assertions with explicit per-check disposition: DELETE
+      C9-direction-clause-enum-default (field removed); REWRITE C9-solvedThreshold-placement to
+      assert computed_thresholds (open map) + target_match_percent placement/shape on
+      SuitabilityData; DELETE or INVERT C9-multi-optimized-400 to assert the first-wins behavior is
+      documented (ref DATA-2026-0094) rather than asserting a rejection rule that doesn't exist. Add
+      REQUIRED_REQ_TAGS/structural coverage for the new fields. Bump info.version from 0.3.0 to
+      0.4.0 -- treat as a breaking bump for the inverse clause (field removal/rename, not purely
+      additive), consistent with NFR-VER-1's additive-only tolerance for MINOR bumps.
     status: open
     priority: must-have
     type: chore
   - id: t7
     description: >-
-      Run make verify-spec and make level1 (PROVIDER_SPEC pointed at the real mt-landvault-api
-      provider spec) locally; confirm both drifts are resolved.
+      Rewrite the stale embedded examples and prose that contradict the new shape: the
+      /areal/suitability 200-response example (currently shows solvedThreshold: 2.82) and the
+      SuitabilityRequest.example (currently shows camelCase
+      fieldMatchPercent/fieldOptimized/direction) must be rewritten to the new field names/shape;
+      the /areal/suitability 400-response description currently states '>1 fieldOptimized:true
+      clause MUST be rejected' -- rewrite to describe the real
+      first-wins/silently-unsolved-for-duplicates behavior instead.
     status: open
+    priority: must-have
+    type: fix
+  - id: t8
+    description: >-
+      Run make verify-spec and make level1 (PROVIDER_SPEC pointed at the real mt-landvault-api
+      provider spec) locally; confirm both drifts (A: analytes scale default, B: inverse-clause
+      reshape) are resolved and no ERROR-level breaking changes remain on the touched surfaces.
     priority: must-have
     type: test
 id: CCT-2026-0016
+notes: >-
+  Validator round (Architect 0 blocking/5 advisory; Auditor 1 blocking/8 advisory; Critic 2
+  blocking/4 advisory) surfaced 3 blocking findings, all resolved by expanding task scope directly
+  rather than re-litigating with David: (1) Auditor+Critic both flagged t5 under-scoped to R6/R7
+  only, missing coverage-matrix.md sections 2/4/7.1-7.5 -- t5 expanded to sweep the whole document.
+  (2) Critic flagged stale embedded examples/prose (response example, request example,
+  400-description, Clause description) contradicting the new shape with nothing in t1-t7 catching it
+  -- added as new t7, original t7 renumbered t8. (3) Critic's bundling-split recommendation (split A
+  from B into two issues/PRs) is superseded by David's explicit instruction this session to continue
+  both in parallel/one revision -- not re-surfaced. Advisory findings folded inline into t2/t3/t4/t6
+  (snake_case rename + type/bound correction, if/then/else removal, open-map modeling for
+  computed_thresholds/analyteAverages/nonMatchingAnalyteAverages, analytesOfInterest addition,
+  SuitabilityPredicted suppressed-field gap, per-check verify disposition, explicit version bump
+  target 0.3.0->0.4.0).

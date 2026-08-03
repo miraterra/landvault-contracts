@@ -23,28 +23,33 @@ Governing ADRs: ADR-0056..0062 in `~/git/landvault/landvault-governance/`
 
 ## Agent Roles
 
-Cage root: `~/git/landvault/landvault-cage/`
+This repo is CAGE-scoped: sessions operating under CAGE additionally follow
+`CAGE.md` (the generated protocol — see the pointer in AGENTS.md). Sessions
+not operating under CAGE ignore both this section and CAGE.md.
 
-All relative paths in agent and skill files resolve to the cage root, not the
-project directory.
+Agent definitions and skills ship with the `@dleangen/cage-coordinator`
+package (installed as a devDependency of this repo). Base definitions:
 
-**Coordinator session**: Before responding to any instruction, use the Read
-tool to read `~/git/landvault/landvault-cage/agents/coordinator/agent.md` and
+    node_modules/@dleangen/cage-coordinator/.claude/agents/<role>/agent.md
+    node_modules/@dleangen/cage-coordinator/skills/<skill>.md
+
+Project-specific overrides, when needed, live at the same relative paths
+under this repo's `.claude/` and shadow the package versions. Coordinator
+sessions are driven by the `cage-coordinator` CLI (the FSM is the source
+of truth — `status`, `bootstrap`, `next`, `resume`).
+
+**Coordinator session**: Before responding to any instruction, read the package's
+`.claude/agents/coordinator/agent.md` and
 run the bootstrap orientation pass defined there, with these project-scoped
 overrides:
 - This is a **single-project coordinator**, not a portfolio coordinator.
 - Backlog lives locally at `topics/CCT/backlog.yaml` (single-topic store via cage-issues-mcp) — no cross-project filtering needed.
 - Being on a feature branch is normal and expected.
+- Work lands as a **PR to the repo owner**, not a direct merge to main.
+  Use `gh pr create` at the landing step instead of `cage-git land --accept`.
 
 **Manager session** (on a track branch): When invoked with "Manage {ISSUE_ID}",
-use the Read tool to read `~/git/landvault/landvault-cage/agents/manager/agent.md`
+read the package's `.claude/agents/manager/agent.md`
 and execute the state machine defined there.
 
-## Cage methodology
-
-Agent roles, skills, and runbooks live in the cage repo. Reference by
-absolute path:
-
-~/git/landvault/landvault-cage/agents/<role>/agent.md
-~/git/landvault/landvault-cage/skills/<skill>.md
-~/git/landvault/landvault-cage/runbooks/<runbook>.md
+@AGENTS.md

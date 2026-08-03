@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@dleangen/cage-core": "^0.4.0"
+  },
+  "devDependencies": {
+    "@dleangen/cage-coordinator": "^0.8.1"
+  }
+}
